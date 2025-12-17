@@ -1,3 +1,19 @@
+## Automated Testing
+
+This project uses [bats-core](https://github.com/bats-core/bats-core) for automated testing of bash scripts.
+
+### Running Tests
+
+1. bats-core is included as a git submodule in `test/bats-core`.
+2. To run the tests, use:
+
+  ```bash
+  ./test/bats-core/bin/bats test/install.bats
+  ```
+
+3. Tests will run in a temporary directory and check for correct script behavior (e.g., CSV config creation, alias logging).
+
+If you add new features or scripts, please add or update tests in the `test/` directory.
 # dotfailes_v2
 
 Dotfile management using bare git repositories with platform-specific scripts.
