@@ -1,3 +1,11 @@
+## Logs and Process Documentation
+
+All major interactions, plans, pending items, and executed commands are logged in the `logs/` directory:
+
+- `logs/interaction-YYYY-MM-DDTHH-MM-SS.jsonl`: Chronological log of user requests, system responses, and actions.
+- `logs/rollback-YYYY-MM-DDTHH-MM-SS.jsonl`: Rollback instructions and critical commands for session recovery.
+
+Refer to these logs for session history, troubleshooting, and rollback procedures. The logging system is described in `.github/copilot-instructions.md`.
 ## Automated Testing
 
 This project uses [bats-core](https://github.com/bats-core/bats-core) for automated testing of bash scripts.
@@ -432,3 +440,32 @@ Inspired by various dotfile management approaches and the bare git repository te
 ## Support
 
 For issues, questions, or suggestions, please open an issue on the GitHub repository.
+
+## Pending Items
+
+- Expand and maintain `bats` tests for all new features and edge cases.
+- Continue implementing automation and documentation per `.github/copilot-instructions.md`.
+- Review and improve rollback and logging mechanisms as features evolve.
+- Refactor and modularize scripts for maintainability.
+- Add more robust error handling and reporting.
+- Document all new features and changes in the logs and README.
+
+## Future Plans / Roadmap
+
+- Integrate CI/CD for automated testing and deployment of dotfiles.
+- Add support for additional shells and platforms.
+- Implement advanced conflict resolution strategies for dotfiles vs. git.
+- Provide a web-based dashboard for log and rollback review.
+- Enable encrypted secrets management for sensitive dotfiles.
+- Expand remote setup and multi-host orchestration features.
+
+## Warning: Do Not Mix Up Git and Dotfiles
+
+**Important:**
+
+- Keep your dotfiles repository and your git configuration (`.gitconfig`, `.gitignore`, etc.) logically separated unless you are certain of the implications.
+- Mixing up git's own configuration files with managed dotfiles can cause merge conflicts, credential leaks, or unexpected behavior.
+- Always review changes to `.git*` files before committing or pushing.
+- Use the provided logging and rollback features to recover from accidental merges or overwrites.
+
+For more details, see the [Logging and Rollback](#logs-and-process-documentation) section and `.github/copilot-instructions.md`.
