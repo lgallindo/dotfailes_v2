@@ -46,12 +46,28 @@ pacman -S jq  # MSYS2
 
 ### Get the scripts
 
-Clone this repository or download the appropriate script for your platform:
+Clone this repository:
 
 ```bash
 git clone https://github.com/lgallindo/dotfailes_v2.git
 cd dotfailes_v2
 ```
+
+#### Quick Installation (Linux/MacOS)
+
+Use the installation script for an interactive setup:
+
+```bash
+./install.sh
+```
+
+The script will:
+- Check prerequisites (git and jq)
+- Detect your OS and select the appropriate script
+- Guide you through repository initialization
+- Optionally add the dotfiles alias to your shell configuration
+
+#### Manual Installation
 
 Or download individual scripts:
 - `dotfailes.sh` - for Linux and general Unix systems
