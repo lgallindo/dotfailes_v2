@@ -1,3 +1,9 @@
+@test "install.sh non-interactive mode sets up repo and alias" {
+  run bash "$BATS_TEST_DIRNAME/../install.sh" --repo-path "$TEST_DIR/.dotfiles" --setup-name "testsetup" --dotfiles-folder "$TEST_DIR" --remote "https://example.com/repo.git"
+  [ "$status" -eq 0 ]
+  [ -f install_config.csv ]
+  grep -q 'dotfailes alias' "$HOME/.bash_aliases" || grep -q 'dotfailes alias' "$HOME/.bashrc"
+}
 #!/usr/bin/env bats
 
 setup() {
