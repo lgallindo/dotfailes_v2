@@ -10,16 +10,66 @@ Refer to these logs for session history, troubleshooting, and rollback procedure
 
 This project uses [bats-core](https://github.com/bats-core/bats-core) for automated testing of bash scripts.
 
+### Install bats-core
+
+bats-core is included as a git submodule. Initialize it with:
+
+```bash
+git submodule update --init --recursive
+```
+
+**Or**, install bats-core globally on your system:
+
+**Linux (Debian/Ubuntu):**
+```bash
+sudo apt-get install bats
+```
+
+**Linux (Fedora/RHEL):**
+```bash
+sudo dnf install bats
+```
+
+**Linux (Arch):**
+```bash
+sudo pacman -S bats-core
+```
+
+**MacOS (Homebrew):**
+```bash
+brew install bats-core
+```
+
+**MacOS (MacPorts):**
+```bash
+sudo port install bats
+```
+
+**Windows (Git Bash/MSYS2):**
+```bash
+pacman -S bats
+```
+
+**From Source (all platforms):**
+```bash
+git clone https://github.com/bats-core/bats-core.git
+cd bats-core
+sudo ./install.sh /usr/local
+```
+
 ### Running Tests
 
-1. bats-core is included as a git submodule in `test/bats-core`.
-2. To run the tests, use:
+If using the submodule:
+```bash
+./test/bats-core/bin/bats test/install.bats
+```
 
-  ```bash
-  ./test/bats-core/bin/bats test/install.bats
-  ```
+If bats-core installed globally:
+```bash
+bats test/install.bats
+```
 
-3. Tests will run in a temporary directory and check for correct script behavior (e.g., CSV config creation, alias logging).
+Tests check for correct script behavior (e.g., pipe-delimited log creation, shell detection, alias logging).
 
 If you add new features or scripts, please add or update tests in the `test/` directory.
 # dotfailes_v2

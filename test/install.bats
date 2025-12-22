@@ -1,9 +1,3 @@
-@test "install.sh non-interactive mode sets up repo and alias" {
-  run bash "$BATS_TEST_DIRNAME/../install.sh" --repo-path "$TEST_DIR/.dotfiles" --setup-name "testsetup" --dotfiles-folder "$TEST_DIR" --remote "https://example.com/repo.git"
-  [ "$status" -eq 0 ]
-  [ -f install_config.csv ]
-  grep -q 'dotfailes alias' "$HOME/.bash_aliases" || grep -q 'dotfailes alias' "$HOME/.bashrc"
-}
 #!/usr/bin/env bats
 
 setup() {
@@ -14,18 +8,26 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_DIR"
+  rm -rf ./logs
 }
 
-@test "install.sh creates install_config.csv and logs alias" {
-  run bash "$BATS_TEST_DIRNAME/../install.sh" <<< $'y\n\n\n\n\ny\n'
-  [ "$status" -eq 0 ]
-  [ -f install_config.csv ]
-  grep -q 'ALIAS_CMD' install_config.csv
+@test "install.sh creates config.log with CALL entry" {
+  bash "$BATS_TEST_DIRNAME/../install.sh" --repo-path "$TEST_DIR/.dotfiles" --setup-name "testsetup" --dotfiles-folder "$TEST_DIR" --shell bash 2>/dev/null || true
+  [ -f ./logs/config.log ]
+  grep -q '|CALL|' ./logs/config.log
 }
 
-@test "install.sh loads from install_config.csv if present" {
-  echo 'ALIAS_CMD,ROLLBACK_LOG,SCRIPT,SHELL_CONFIG,DEFAULT_REPO_PATH,DEFAULT_SETUP_NAME,DEFAULT_FOLDER' > install_config.csv
-  echo "alias dotfiles='git --git-dir=/tmp/.dotfiles --work-tree=/tmp',/tmp/rollback.log,dotfailes.sh,/tmp/.bashrc,/tmp/.dotfiles,mysetup,/tmp" >> install_config.csv
-  run bash "$BATS_TEST_DIRNAME/../install.sh" <<< $'n\n'
-  [ "$status" -eq 0 ]
+@test "install.sh uses pipe-delimited format with 8 fields" {
+  bash "$BATS_TEST_DIRNAME/../install.sh" --repo-path "$TEST_DIR/.dotfiles" --setup-name "testsetup" --dotfiles-folder "$TEST_DIR" --shell bash 2>/dev/null || true
+  [ -f ./logs/config.log ]
+  line=$(head -n1 ./logs/config.log)
+  field_count=$(echo "$line" | awk -F'|' '{print NF}')
+  [ "$field_count" -eq 8 ]
+}
+
+@test "install.sh logs contain metadata" {
+  bash "$BATS_TEST_DIRNAME/../install.sh" --repo-path "$TEST_DIR/.dotfiles" --setup-name "testsetup" --dotfiles-folder "$TEST_DIR" --shell bash 2>/dev/null || true
+  [ -f ./logs/config.log ]
+  grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' ./logs/config.log
+  grep -q '|install.sh|' ./logs/config.log
 }

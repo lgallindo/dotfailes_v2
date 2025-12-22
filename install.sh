@@ -86,8 +86,216 @@ check_git() {
     fi
 }
 
+# Global variables for row counting
+CONFIG_ROW_COUNT=0
+ROLLBACK_ROW_COUNT=0
+CALL_ARGS="$@"
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_VERSION="1"
+
+# Append config entry (key-value pair with metadata)
+append_config() {
+    local key="$1"
+    local value="$2"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    
+    # Escape pipe characters in values
+    value="${value//\|/\\|}"
+    
+    # Append to config log
+    mkdir -p "./logs"
+    printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$timestamp" "$SCRIPT_NAME" "$USER" "$PWD" "$CALL_ARGS" "$SCRIPT_VERSION" "$key" "$value" >> "./logs/config.log"
+    
+    ((CONFIG_ROW_COUNT++))
+    info "[${timestamp}] Logged: $key=$value"
+}
+
+# Append rollback instruction (action with revert command)
+append_rollback() {
+    local action="$1"
+    local description="$2"
+    local revert_cmd="$3"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    
+    # Escape pipe characters
+    description="${description//\|/\\|}"
+    revert_cmd="${revert_cmd//\|/\\|}"
+    
+    # Append to rollback log
+    mkdir -p "./logs"
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$timestamp" "$SCRIPT_NAME" "$USER" "$PWD" "$CALL_ARGS" "$SCRIPT_VERSION" "$action" "$description" "$revert_cmd" >> "./logs/rollback.log"
+    
+    ((ROLLBACK_ROW_COUNT++))
+    info "[${timestamp}] Action logged: $action"
+}
+
+# Update log file headers with row count
+update_log_headers() {
+    if [[ -f "./logs/config.log" ]]; then
+        # Prepend row count as first line
+        sed -i "" "1i\
+[$CONFIG_ROW_COUNT]
+" "./logs/config.log" 2>/dev/null || \
+        { sed -i "1s/^/[$CONFIG_ROW_COUNT]\n/" "./logs/config.log" 2>/dev/null || true; }
+    fi
+    
+    if [[ -f "./logs/rollback.log" ]]; then
+        sed -i "" "1i\
+[$ROLLBACK_ROW_COUNT]
+" "./logs/rollback.log" 2>/dev/null || \
+        { sed -i "1s/^/[$ROLLBACK_ROW_COUNT]\n/" "./logs/rollback.log" 2>/dev/null || true; }
+    fi
+}
+
+# Register cleanup on exit
+trap update_log_headers EXIT
+
+# Rollback function - undoes installation
+rollback() {
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    info "[${timestamp}] Starting rollback process"
+    
+    # Check if CSV config exists
+    if [[ ! -f "$CSV_CONFIG_FILE" ]]; then
+        warn "[${timestamp}] No install_config.csv found. Nothing to rollback."
+        return
+    fi
+    
+    # Read the last entry from CSV (skip header)
+    local csv_entry=$(tail -n 1 "$CSV_CONFIG_FILE")
+    if [[ -z "$csv_entry" ]]; then
+        warn "[${timestamp}] CSV file is empty. Nothing to rollback."
+        return
+    fi
+    
+    # Parse CSV fields (order: ALIAS_CMD,ROLLBACK_LOG,SCRIPT,SHELL_CONFIG,DEFAULT_REPO_PATH,DEFAULT_SETUP_NAME,DEFAULT_FOLDER)
+    IFS=',' read -r ALIAS_CMD ROLLBACK_LOG SCRIPT SHELL_CONFIG DEFAULT_REPO_PATH DEFAULT_SETUP_NAME DEFAULT_FOLDER <<< "$csv_entry"
+    
+    info "[${timestamp}] Parsed rollback data from CSV"
+    info "[${timestamp}] - Alias target: $SHELL_CONFIG"
+    info "[${timestamp}] - Repo path: $DEFAULT_REPO_PATH"
+    
+    # Remove alias from shell config if it exists
+    if [[ -n "$SHELL_CONFIG" && -f "$SHELL_CONFIG" ]]; then
+        if grep -q "alias dotfiles=" "$SHELL_CONFIG"; then
+            # Create backup of shell config
+            cp "$SHELL_CONFIG" "${SHELL_CONFIG}.pre-rollback"
+            info "[${timestamp}] Created backup: ${SHELL_CONFIG}.pre-rollback"
+            
+            # Remove dotfiles alias lines
+            grep -v "dotfiles" "$SHELL_CONFIG" > "${SHELL_CONFIG}.tmp" && mv "${SHELL_CONFIG}.tmp" "$SHELL_CONFIG"
+            success "[${timestamp}] Removed dotfiles alias from $SHELL_CONFIG"
+            log_rollback_instruction "alias_removed" "$SHELL_CONFIG"
+        fi
+    fi
+    
+    # Remove repository directory if specified
+    if [[ -n "$DEFAULT_REPO_PATH" && -d "$DEFAULT_REPO_PATH" ]]; then
+        read -p "Remove dotfiles repository at $DEFAULT_REPO_PATH? (y/n) " -r remove_repo
+        if [[ "$remove_repo" =~ ^[Yy]$ ]]; then
+            rm -rf "$DEFAULT_REPO_PATH"
+            success "[${timestamp}] Removed repository: $DEFAULT_REPO_PATH"
+            log_rollback_instruction "repo_removed" "$DEFAULT_REPO_PATH"
+        fi
+    fi
+    
+    # Optionally remove CSV config
+    read -p "Remove install_config.csv? (y/n) " -r remove_csv
+    if [[ "$remove_csv" =~ ^[Yy]$ ]]; then
+        rm -f "$CSV_CONFIG_FILE"
+        success "[${timestamp}] Removed CSV config: $CSV_CONFIG_FILE"
+        log_rollback_instruction "csv_removed" "$CSV_CONFIG_FILE"
+    fi
+    
+    success "[${timestamp}] Rollback complete!"
+}
+
+# Detect shell and set appropriate script
+detect_shell() {
+    local shell_choice="${SHELL_CHOICE:-auto}"
+    
+    case "$shell_choice" in
+        bash)
+            DETECTED_SHELL="bash"
+            SCRIPT="dotfailes.sh"
+            SHELL_CONFIG="$HOME/.bashrc"
+            ;;
+        zsh)
+            DETECTED_SHELL="zsh"
+            SCRIPT="dotfailes.zsh"
+            SHELL_CONFIG="$HOME/.zshrc"
+            ;;
+        ksh)
+            DETECTED_SHELL="ksh"
+            SCRIPT="dotfailes.sh"
+            SHELL_CONFIG="$HOME/.kshrc"
+            ;;
+        ksh93)
+            DETECTED_SHELL="ksh93"
+            SCRIPT="dotfailes.sh"
+            SHELL_CONFIG="$HOME/.kshrc"
+            ;;
+        dash)
+            DETECTED_SHELL="dash"
+            SCRIPT="dotfailes.sh"
+            SHELL_CONFIG="$HOME/.dashrc"
+            ;;
+        fish)
+            DETECTED_SHELL="fish"
+            SCRIPT="dotfailes.fish"
+            SHELL_CONFIG="$HOME/.config/fish/config.fish"
+            ;;
+        auto)
+            local current_shell=$(basename "$SHELL")
+            case "$current_shell" in
+                zsh)
+                    DETECTED_SHELL="zsh"
+                    SCRIPT="dotfailes.zsh"
+                    SHELL_CONFIG="$HOME/.zshrc"
+                    ;;
+                fish)
+                    DETECTED_SHELL="fish"
+                    SCRIPT="dotfailes.fish"
+                    SHELL_CONFIG="$HOME/.config/fish/config.fish"
+                    ;;
+                ksh|ksh93)
+                    DETECTED_SHELL="$current_shell"
+                    SCRIPT="dotfailes.sh"
+                    SHELL_CONFIG="$HOME/.kshrc"
+                    ;;
+                dash)
+                    DETECTED_SHELL="dash"
+                    SCRIPT="dotfailes.sh"
+                    SHELL_CONFIG="$HOME/.dashrc"
+                    ;;
+                bash|*)
+                    DETECTED_SHELL="bash"
+                    SCRIPT="dotfailes.sh"
+                    SHELL_CONFIG="$HOME/.bashrc"
+                    ;;
+            esac
+            ;;
+        *)
+            error "Unknown shell: $shell_choice"
+            exit 1
+            ;;
+    esac
+    
+    # Log detected shell after assignment
+    append_config "OS" "$(detect_os)"
+    append_config "SHELL" "$DETECTED_SHELL"
+    append_config "SCRIPT" "$SCRIPT"
+    append_config "SHELL_CONFIG" "$SHELL_CONFIG"
+    info "Detected: $DETECTED_SHELL shell -> $SCRIPT"
+}
+
 # Main installation
 main() {
+    # Log full command line as first entry
+    append_config "CALL" "$CALL_ARGS"
+    
     # Parse CLI arguments for non-interactive mode
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -101,23 +309,35 @@ main() {
                 NO_ALIAS=1; shift;;
             --remote)
                 REPO_URL="$2"; shift 2;;
+            --shell)
+                SHELL_CHOICE="$2"; shift 2;;
+            --rollback)
+                ROLLBACK_MODE=1; shift;;
             --help)
-                echo "Usage: $0 [--repo-path PATH] [--setup-name NAME] [--dotfiles-folder DIR] [--no-alias] [--remote URL]"; exit 0;;
+                echo "Usage: $0 [--repo-path PATH] [--setup-name NAME] [--dotfiles-folder DIR] [--no-alias] [--remote URL] [--shell SHELL] [--rollback]"; exit 0;;
             *)
                 break;;
         esac
     done
-    # CSV config file in current directory
-    CSV_CONFIG_FILE="./install_config.csv"
-    # CSV header
-    CSV_HEADER="ALIAS_CMD,ROLLBACK_LOG,SCRIPT,SHELL_CONFIG,DEFAULT_REPO_PATH,DEFAULT_SETUP_NAME,DEFAULT_FOLDER"
-
-    # Function to write config to CSV
-    write_csv_config() {
-        if [[ -n "$REPO_PATH" && -n "$SETUP_NAME" && -n "$DOTFILES_FOLDER" ]]; then
+    # Old CSV functions no longer used - using new pipe-delimited format
+    
+    # Check prerequisites
+    check_jq
+    check_git
+    
+    # Handle rollback mode if requested
+    if [[ "$ROLLBACK_MODE" == 1 ]]; then
+        rollback
+        return
+    fi
+    
+    # Detect shell and set script/config
+    detect_shell
+    
+    if [[ -n "$REPO_PATH" && -n "$SETUP_NAME" && -n "$DOTFILES_FOLDER" ]]; then
             # Non-interactive mode
-            log_action "REPO:$REPO_PATH"
-            log_action "CONFIG:$HOME/.dotfailes/config.json"
+            info "Repository path: $REPO_PATH"
+            info "Config file: $HOME/.dotfailes/config.json"
             info "Initializing repository (non-interactive mode)..."
             ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             # Alias
@@ -135,10 +355,17 @@ main() {
                     echo "$ALIAS_COMMENT" >> "$ALIAS_TARGET"
                     echo "$ALIAS_CMD" >> "$ALIAS_TARGET"
                     success "Added dotfiles alias to $ALIAS_TARGET"
+                    append_config "ALIAS_TARGET" "$ALIAS_TARGET"
+                    append_rollback "alias_added" "Added dotfiles alias to $ALIAS_TARGET" "grep -v 'dotfiles' '$ALIAS_TARGET' > '${ALIAS_TARGET}.tmp' && mv '${ALIAS_TARGET}.tmp' '$ALIAS_TARGET'"
                     info "Run 'source $ALIAS_TARGET' to load the alias in your current shell"
                 fi
             fi
-            write_csv_config
+            append_config "REPO_PATH" "$REPO_PATH"
+            append_config "SETUP_NAME" "$SETUP_NAME"
+            append_config "DOTFILES_FOLDER" "$DOTFILES_FOLDER"
+            if [[ -n "$REPO_URL" ]]; then
+                append_config "REPO_URL" "$REPO_URL"
+            fi
             if [[ -n "$REPO_URL" ]]; then
                 info "Adding remote origin: $REPO_URL"
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" remote add origin "$REPO_URL" 2>/dev/null || true
@@ -161,8 +388,9 @@ main() {
             echo "  (default: $DEFAULT_REPO_PATH)"
             read -r REPO_PATH
             REPO_PATH=${REPO_PATH:-$DEFAULT_REPO_PATH}
-            log_action "REPO:$REPO_PATH"
+            info "Repository path: $REPO_PATH"
             # Get setup name
+            local OS=$(detect_os)
             DEFAULT_SETUP_NAME="$(hostname)-$OS"
             echo ""
             echo "What would you like to name this setup?"
@@ -181,9 +409,9 @@ main() {
             info "Initializing repository..."
             ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             echo ""
-            # Log config file for rollback
+            # Log config file location
             CONFIG_FILE="$HOME/.dotfailes/config.json"
-            log_action "CONFIG:$CONFIG_FILE"
+            info "Config file: $CONFIG_FILE"
             # Ask about adding alias
             echo "Would you like to add the dotfiles alias to $SHELL_CONFIG? (y/n)"
             read -r add_alias
@@ -205,10 +433,17 @@ main() {
                     echo "$ALIAS_COMMENT" >> "$ALIAS_TARGET"
                     echo "$ALIAS_CMD" >> "$ALIAS_TARGET"
                     success "Added dotfiles alias to $ALIAS_TARGET"
+                    append_config "ALIAS_TARGET" "$ALIAS_TARGET"
+                    append_rollback "alias_added" "Added dotfiles alias to $ALIAS_TARGET" "grep -v 'dotfiles' '$ALIAS_TARGET' > '${ALIAS_TARGET}.tmp' && mv '${ALIAS_TARGET}.tmp' '$ALIAS_TARGET'"
                     info "Run 'source $ALIAS_TARGET' to load the alias in your current shell"
                 fi
             fi
-            write_csv_config
+            append_config "REPO_PATH" "$REPO_PATH"
+            append_config "SETUP_NAME" "$SETUP_NAME"
+            append_config "DOTFILES_FOLDER" "$DOTFILES_FOLDER"
+            if [[ -n "$REPO_URL" ]]; then
+                append_config "REPO_URL" "$REPO_URL"
+            fi
             if [[ -n "$REPO_URL" ]]; then
                 info "Adding remote origin: $REPO_URL"
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" remote add origin "$REPO_URL" 2>/dev/null || true
@@ -232,126 +467,11 @@ main() {
             info "Or run this installation script again."
             echo ""
         fi
-
-        info "For more information, see README.md and EXAMPLES.md"
-                SCRIPT="dotfailes.sh"
-                SHELL_CONFIG="$HOME/.bashrc"
-                warn "Using bash script as default"
-                ;;
-        esac
-    fi
-
+    
     # Make script executable
     chmod +x "$SCRIPT"
     info "Made $SCRIPT executable"
     echo ""
-    
-    if [[ "$1" == "rollback" ]]; then
-        rollback
-    fi
-    
-    # Ask user if they want to set up now
-    echo "Would you like to initialize your dotfiles repository now? (y/n)"
-    read -r response
-    
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        echo ""
-        info "Let's set up your dotfiles repository"
-        echo ""
-        
-        # Get repository path
-        DEFAULT_REPO_PATH="$HOME/.dotfiles"
-        echo "Where would you like to store your dotfiles repository?"
-        echo "  (default: $DEFAULT_REPO_PATH)"
-        read -r REPO_PATH
-        REPO_PATH=${REPO_PATH:-$DEFAULT_REPO_PATH}
-        log_action "REPO:$REPO_PATH"
-        
-        # Get setup name
-        DEFAULT_SETUP_NAME="$(hostname)-$OS"
-        echo ""
-        echo "What would you like to name this setup?"
-        echo "  (default: $DEFAULT_SETUP_NAME)"
-        read -r SETUP_NAME
-        SETUP_NAME=${SETUP_NAME:-$DEFAULT_SETUP_NAME}
-        
-        # Get dotfiles folder
-        DEFAULT_FOLDER="$HOME"
-        echo ""
-        echo "Which directory contains your dotfiles?"
-        echo "  (default: $DEFAULT_FOLDER)"
-        read -r DOTFILES_FOLDER
-        DOTFILES_FOLDER=${DOTFILES_FOLDER:-$DEFAULT_FOLDER}
-        
-        # Initialize repository
-        echo ""
-        info "Initializing repository..."
-        ./"$SCRIPT" init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
-        echo ""
-        
-        # Ask about adding alias
-        echo "Would you like to add the dotfiles alias to $SHELL_CONFIG? (y/n)"
-        read -r add_alias
-        
-        if [[ "$add_alias" =~ ^[Yy]$ ]]; then
-            # Prompt for repo URL for comment (or use from config if available)
-            if [[ -z "$REPO_URL" ]]; then
-                echo "Enter the URL for your dotfiles repo (for comment, optional):"
-                read -r REPO_URL
-            fi
-            # Compose identifying comment with repo URL
-            ALIAS_COMMENT="# dotfailes alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
-            ALIAS_CMD="alias dotfiles='git --git-dir=$REPO_PATH --work-tree=$DOTFILES_FOLDER'"
-
-            # Check for .bash_aliases usage
-            BASH_ALIASES="$HOME/.bash_aliases"
-            if [[ -f "$BASH_ALIASES" && -f "$HOME/.bashrc" && $(grep -E "^ *(source|\. +) *~?/.bash_aliases" "$HOME/.bashrc") ]]; then
-                ALIAS_TARGET="$BASH_ALIASES"
-            else
-                ALIAS_TARGET="$SHELL_CONFIG"
-            fi
-
-            # Check if alias already exists
-            if grep -q "alias dotfiles=" "$ALIAS_TARGET" 2>/dev/null; then
-                warn "Dotfiles alias already exists in $ALIAS_TARGET"
-            else
-                echo "" >> "$ALIAS_TARGET"
-                echo "$ALIAS_COMMENT" >> "$ALIAS_TARGET"
-                echo "$ALIAS_CMD" >> "$ALIAS_TARGET"
-                success "Added dotfiles alias to $ALIAS_TARGET"
-                echo ""
-                info "Run 'source $ALIAS_TARGET' to load the alias in your current shell"
-            fi
-        fi
-        
-        # Write config to CSV
-        write_csv_config
-
-        # If a remote URL is known, add it and set upstream
-        if [[ -n "$REPO_URL" ]]; then
-            info "Adding remote origin: $REPO_URL"
-            $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" remote add origin "$REPO_URL" 2>/dev/null || true
-            $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
-        fi
-
-        echo ""
-        success "Setup complete!"
-        echo ""
-        echo "Next steps:"
-        echo "  1. Source your shell config: source $SHELL_CONFIG"
-        echo "  2. Hide untracked files: dotfiles config --local status.showUntrackedFiles no"
-        echo "  3. Add your first dotfiles: dotfiles add ~/.bashrc"
-        echo "  4. Commit: dotfiles commit -m 'Initial commit'"
-        echo "  5. (Optional) Add remote: dotfiles remote add origin <url>"
-        echo ""
-    else
-        echo ""
-        info "You can manually initialize your repository later with:"
-        echo "  ./$SCRIPT init <repo_path> <setup_name> <dotfiles_folder>"
-        echo ""
-        info "Or run this installation script again."
-        echo ""
-    fi
     
     info "For more information, see README.md and EXAMPLES.md"
 }
