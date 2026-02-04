@@ -19,3 +19,5 @@ desktop.ini
 # Special
 logs/
 .specstory/
+*.backup*
+*.local*

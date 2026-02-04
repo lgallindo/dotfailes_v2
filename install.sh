@@ -17,6 +17,17 @@ echo detected_os: "$detected_os"
 echo detected_hostname: "$detected_hostname"
 echo TERM_PROGRAM: "$TERM_PROGRAM"
 
+# Detect user - cross-platform safe approach
+if [[ -z "$USER" ]]; then
+    if command -v whoami &> /dev/null; then
+        USER="$(whoami)"
+    elif [[ -n "$USERNAME" ]]; then
+        USER="$USERNAME"
+    else
+        USER="unknown"
+    fi
+fi
+
 # Global variables for row counting
 CONFIG_ROW_COUNT=0
 ROLLBACK_ROW_COUNT=0
@@ -143,15 +154,8 @@ append_rollback() {
 
 # Update log file headers with row count
 update_log_headers() {
-    if [[ -f "./logs/config.log" ]]; then
-        # Append row count summary at the end
-        printf '# TOTAL_ROWS: %d\n' "$CONFIG_ROW_COUNT" >> "./logs/config.log"
-    fi
-    
-    if [[ -f "./logs/rollback.log" ]]; then
-        # Append row count summary at the end
-        printf '# TOTAL_ROWS: %d\n' "$ROLLBACK_ROW_COUNT" >> "./logs/rollback.log"
-    fi
+    # Cleanup function - no row count logging
+    return
 }
 
 # Register cleanup on exit
@@ -298,8 +302,14 @@ detect_shell() {
 
 # Main installation
 main() {
-    # Log full command line as first entry
+    # Log environment information
     append_config "CALL" "$CALL_ARGS"
+    append_config "DETECTED_OS_RAW" "$detected_os"
+    append_config "HOSTNAME" "$detected_hostname"
+    append_config "TERM_PROGRAM" "$TERM_PROGRAM"
+    append_config "WHOAMI" "$(whoami 2>/dev/null || echo '')"
+    append_config "USER" "$USER"
+    append_config "USERNAME" "$USERNAME"
     
     # Parse CLI arguments for non-interactive mode
     while [[ $# -gt 0 ]]; do
