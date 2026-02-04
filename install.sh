@@ -17,7 +17,12 @@ echo detected_os: "$detected_os"
 echo detected_hostname: "$detected_hostname"
 echo TERM_PROGRAM: "$TERM_PROGRAM"
 
-
+# Global variables for row counting
+CONFIG_ROW_COUNT=0
+ROLLBACK_ROW_COUNT=0
+CALL_ARGS="$@"
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_VERSION="1.0.0"
 
 info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -86,13 +91,6 @@ check_git() {
     fi
 }
 
-# Global variables for row counting
-CONFIG_ROW_COUNT=0
-ROLLBACK_ROW_COUNT=0
-CALL_ARGS="$@"
-SCRIPT_NAME="$(basename "$0")"
-SCRIPT_VERSION="1"
-
 # Append config entry (key-value pair with metadata)
 append_config() {
     local key="$1"
@@ -104,10 +102,16 @@ append_config() {
     
     # Append to config log
     mkdir -p "./logs"
+    
+    # Add header if file doesn't exist or is empty
+    if [[ ! -s "./logs/config.log" ]]; then
+        printf '# TIMESTAMP|SCRIPT|USER|PWD|CALL_ARGS|VERSION|KEY|VALUE\n' > "./logs/config.log"
+    fi
+    
     printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$timestamp" "$SCRIPT_NAME" "$USER" "$PWD" "$CALL_ARGS" "$SCRIPT_VERSION" "$key" "$value" >> "./logs/config.log"
     
-    ((CONFIG_ROW_COUNT++))
+    CONFIG_ROW_COUNT=$((CONFIG_ROW_COUNT + 1))
     info "[${timestamp}] Logged: $key=$value"
 }
 
@@ -124,28 +128,29 @@ append_rollback() {
     
     # Append to rollback log
     mkdir -p "./logs"
+    
+    # Add header if file doesn't exist or is empty
+    if [[ ! -s "./logs/rollback.log" ]]; then
+        printf '# TIMESTAMP|SCRIPT|USER|PWD|CALL_ARGS|VERSION|ACTION|DESCRIPTION|REVERT_CMD\n' > "./logs/rollback.log"
+    fi
+    
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$timestamp" "$SCRIPT_NAME" "$USER" "$PWD" "$CALL_ARGS" "$SCRIPT_VERSION" "$action" "$description" "$revert_cmd" >> "./logs/rollback.log"
     
-    ((ROLLBACK_ROW_COUNT++))
+    ROLLBACK_ROW_COUNT=$((ROLLBACK_ROW_COUNT + 1))
     info "[${timestamp}] Action logged: $action"
 }
 
 # Update log file headers with row count
 update_log_headers() {
     if [[ -f "./logs/config.log" ]]; then
-        # Prepend row count as first line
-        sed -i "" "1i\
-[$CONFIG_ROW_COUNT]
-" "./logs/config.log" 2>/dev/null || \
-        { sed -i "1s/^/[$CONFIG_ROW_COUNT]\n/" "./logs/config.log" 2>/dev/null || true; }
+        # Append row count summary at the end
+        printf '# TOTAL_ROWS: %d\n' "$CONFIG_ROW_COUNT" >> "./logs/config.log"
     fi
     
     if [[ -f "./logs/rollback.log" ]]; then
-        sed -i "" "1i\
-[$ROLLBACK_ROW_COUNT]
-" "./logs/rollback.log" 2>/dev/null || \
-        { sed -i "1s/^/[$ROLLBACK_ROW_COUNT]\n/" "./logs/rollback.log" 2>/dev/null || true; }
+        # Append row count summary at the end
+        printf '# TOTAL_ROWS: %d\n' "$ROLLBACK_ROW_COUNT" >> "./logs/rollback.log"
     fi
 }
 
@@ -476,4 +481,4 @@ main() {
     info "For more information, see README.md and EXAMPLES.md"
 }
 
-main
+main "$@"
