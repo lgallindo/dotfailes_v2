@@ -13,9 +13,11 @@ NC='\033[0m'
 
 detected_os="$(uname -s)"
 detected_hostname="$(hostname)"
+SCRIPT="dots.sh"
 echo detected_os: "$detected_os"
 echo detected_hostname: "$detected_hostname"
 echo TERM_PROGRAM: "$TERM_PROGRAM"
+echo SCRIPT: "$SCRIPT"
 
 # Detect user - cross-platform safe approach
 if [[ -z "$USER" ]]; then
@@ -228,32 +230,28 @@ detect_shell() {
     case "$shell_choice" in
         bash)
             DETECTED_SHELL="bash"
-            SCRIPT="dotfailes.sh"
             SHELL_CONFIG="$HOME/.bashrc"
             ;;
         zsh)
             DETECTED_SHELL="zsh"
-            SCRIPT="dotfailes.zsh"
+            SCRIPT="dots.zsh"
             SHELL_CONFIG="$HOME/.zshrc"
             ;;
         ksh)
             DETECTED_SHELL="ksh"
-            SCRIPT="dotfailes.sh"
             SHELL_CONFIG="$HOME/.kshrc"
             ;;
         ksh93)
             DETECTED_SHELL="ksh93"
-            SCRIPT="dotfailes.sh"
             SHELL_CONFIG="$HOME/.kshrc"
             ;;
         dash)
             DETECTED_SHELL="dash"
-            SCRIPT="dotfailes.sh"
             SHELL_CONFIG="$HOME/.dashrc"
             ;;
         fish)
             DETECTED_SHELL="fish"
-            SCRIPT="dotfailes.fish"
+            SCRIPT="dots.fish"
             SHELL_CONFIG="$HOME/.config/fish/config.fish"
             ;;
         auto)
@@ -261,27 +259,24 @@ detect_shell() {
             case "$current_shell" in
                 zsh)
                     DETECTED_SHELL="zsh"
-                    SCRIPT="dotfailes.zsh"
+                    SCRIPT="dots.zsh"
                     SHELL_CONFIG="$HOME/.zshrc"
                     ;;
                 fish)
                     DETECTED_SHELL="fish"
-                    SCRIPT="dotfailes.fish"
+                    SCRIPT="dots.fish"
                     SHELL_CONFIG="$HOME/.config/fish/config.fish"
                     ;;
                 ksh|ksh93)
                     DETECTED_SHELL="$current_shell"
-                    SCRIPT="dotfailes.sh"
                     SHELL_CONFIG="$HOME/.kshrc"
                     ;;
                 dash)
                     DETECTED_SHELL="dash"
-                    SCRIPT="dotfailes.sh"
                     SHELL_CONFIG="$HOME/.dashrc"
                     ;;
                 bash|*)
                     DETECTED_SHELL="bash"
-                    SCRIPT="dotfailes.sh"
                     SHELL_CONFIG="$HOME/.bashrc"
                     ;;
             esac
@@ -386,6 +381,13 @@ main() {
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" remote add origin "$REPO_URL" 2>/dev/null || true
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
             fi
+            # Register repository if remote URL provided
+            if [[ -n "$REPO_URL" ]] && command -v ./dots.sh &> /dev/null; then
+                info "Registering remote in setup registry..."
+                ./dots.sh remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
+                append_config "REMOTE_REGISTERED" "origin=$REPO_URL"
+            fi
+            
             success "Setup complete! (non-interactive)"
             return
         fi
@@ -463,6 +465,13 @@ main() {
                 info "Adding remote origin: $REPO_URL"
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" remote add origin "$REPO_URL" 2>/dev/null || true
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
+                
+                # Register repository if dots.sh is available
+                if command -v ./dots.sh &> /dev/null; then
+                    info "Registering remote in setup registry..."
+                    ./dots.sh remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
+                    append_config "REMOTE_REGISTERED" "origin=$REPO_URL"
+                fi
             fi
             echo ""
             success "Setup complete!"

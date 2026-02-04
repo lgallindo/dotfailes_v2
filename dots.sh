@@ -99,14 +99,16 @@ cmd_init() {
     # Add to configuration
     init_config
     local os_type=$(get_os)
+    local setup_branch="$setup_name"
     
     # Update config with new setup
     local temp_file=$(mktemp)
     jq --arg name "$setup_name" \
        --arg os "$os_type" \
        --arg folder "$dotfiles_folder" \
-       --arg repo "$repo_path" \
-       '.setups += [{name: $name, os: $os, folder: $folder, repo: $repo}]' \
+         --arg repo "$repo_path" \
+         --arg branch "$setup_branch" \
+         '.setups += [{name: $name, os: $os, folder: $folder, repo: $repo, branch: $branch}]' \
        "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
     
     success "Setup '$setup_name' registered (OS: $os_type, Folder: $dotfiles_folder)"
@@ -144,13 +146,15 @@ cmd_clone() {
     # Add to configuration
     init_config
     local os_type=$(get_os)
+    local setup_branch="$setup_name"
     
     local temp_file=$(mktemp)
     jq --arg name "$setup_name" \
        --arg os "$os_type" \
        --arg folder "$dotfiles_folder" \
-       --arg repo "$repo_path" \
-       '.setups += [{name: $name, os: $os, folder: $folder, repo: $repo}]' \
+         --arg repo "$repo_path" \
+         --arg branch "$setup_branch" \
+         '.setups += [{name: $name, os: $os, folder: $folder, repo: $repo, branch: $branch}]' \
        "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
     
     success "Setup '$setup_name' registered"
@@ -176,6 +180,84 @@ cmd_list() {
     info "Configured setups:"
     echo ""
     jq -r '.setups[] | "  • \(.name)\n    OS: \(.os)\n    Folder: \(.folder)\n    Repo: \(.repo)\n"' "$CONFIG_FILE"
+}
+
+# Initialize bash files from remote for a setup
+cmd_bash_init() {
+    local setup_name="$1"
+
+    init_config
+
+    if [[ -z "$setup_name" ]]; then
+        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+    fi
+
+    if [[ -z "$setup_name" ]]; then
+        die "No setups configured yet"
+    fi
+
+    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+
+    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+        die "Setup '$setup_name' has no work tree configured"
+    fi
+
+    if [[ -z "$setup_branch" ]]; then
+        setup_branch="$setup_name"
+        local temp_file=$(mktemp)
+        jq --arg name "$setup_name" --arg branch "$setup_branch" \
+           '(.setups[] | select(.name == $name) | .branch) = $branch' \
+           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    fi
+
+    if ! git --git-dir="$repo_path" remote get-url origin >/dev/null 2>&1; then
+        die "Remote 'origin' not configured for setup '$setup_name'"
+    fi
+
+    local backup_root="$work_tree/.dotfailes-backups"
+    local backup_stamp
+    backup_stamp=$(date -u +"%Y%m%dT%H%M%SZ")
+    local backup_dir="$backup_root/bash-init-$backup_stamp"
+    local backup_created=0
+
+    mkdir -p "$backup_root"
+
+    for bash_item in .bashrc .bash_profile .bash_aliases .bashrc.d; do
+        if [[ -e "$work_tree/$bash_item" ]]; then
+            if [[ "$backup_created" -eq 0 ]]; then
+                mkdir -p "$backup_dir"
+                backup_created=1
+            fi
+            cp -a "$work_tree/$bash_item" "$backup_dir/" || warn "Failed to back up $bash_item"
+        fi
+    done
+
+    if [[ "$backup_created" -eq 1 ]]; then
+        success "Backed up bash files to $backup_dir"
+    fi
+
+    local source_branch="origin/$setup_branch"
+    if [[ -z $(git --git-dir="$repo_path" ls-remote --heads origin "$setup_branch") ]]; then
+        warn "Branch '$setup_branch' not found on origin. Falling back to origin/main."
+        source_branch="origin/main"
+        info "Fetching latest from origin main..."
+        git --git-dir="$repo_path" fetch origin main || warn "Fetch failed or no changes"
+    else
+        info "Fetching latest from origin $setup_branch..."
+        git --git-dir="$repo_path" fetch origin "$setup_branch" || warn "Fetch failed or no changes"
+    fi
+
+    info "Checking out bash files from $source_branch"
+    git --git-dir="$repo_path" --work-tree="$work_tree" checkout "$source_branch" -- \
+        .bashrc .bash_profile .bash_aliases .bashrc.d || die "Checkout failed"
+
+    success "Bash files initialized in $work_tree"
 }
 
 # Add remote to a setup
@@ -245,11 +327,64 @@ cmd_remove_remote() {
     success "Remote '$remote_name' removed from setup '$setup_name'"
 }
 
+# Ensure setup branch exists and is pushed to remote
+cmd_branch_ensure() {
+    local setup_name="$1"
+    local remote_name="${2:-origin}"
+
+    if [[ -z "$setup_name" ]]; then
+        die "Usage: $0 branch-ensure <setup_name> [remote_name]"
+    fi
+
+    init_config
+
+    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+
+    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+        die "Setup '$setup_name' has no work tree configured"
+    fi
+
+    if [[ -z "$setup_branch" ]]; then
+        setup_branch="$setup_name"
+        local temp_file=$(mktemp)
+        jq --arg name "$setup_name" --arg branch "$setup_branch" \
+           '(.setups[] | select(.name == $name) | .branch) = $branch' \
+           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    fi
+
+    info "Ensuring branch '$setup_branch' for setup '$setup_name'"
+    git --git-dir="$repo_path" --work-tree="$work_tree" checkout -B "$setup_branch" || die "Branch checkout failed"
+
+    if ! git --git-dir="$repo_path" rev-parse --verify HEAD >/dev/null 2>&1; then
+        local git_user_name
+        local git_user_email
+        git_user_name=$(git --git-dir="$repo_path" config user.name || true)
+        git_user_email=$(git --git-dir="$repo_path" config user.email || true)
+
+        if [[ -z "$git_user_name" || -z "$git_user_email" ]]; then
+            die "No commits exist and git user.name/user.email are not set. Configure them or create a commit before pushing."
+        fi
+
+        info "No commits found. Creating an empty commit for setup branch."
+        git --git-dir="$repo_path" --work-tree="$work_tree" commit --allow-empty -m "Initialize setup branch $setup_branch" || die "Empty commit failed"
+    fi
+
+    git --git-dir="$repo_path" --work-tree="$work_tree" push -u "$remote_name" "$setup_branch" || die "Push failed"
+
+    success "Branch '$setup_branch' is set for setup '$setup_name' on $remote_name"
+}
+
 # Sync with remote (push and pull)
 cmd_sync() {
     local setup_name="$1"
     local remote_name="${2:-origin}"
-    local branch="${3:-main}"
+    local branch_override="$3"
     
     if [[ -z "$setup_name" ]]; then
         die "Usage: $0 sync <setup_name> [remote_name] [branch]"
@@ -259,10 +394,21 @@ cmd_sync() {
     
     local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
     local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
     
     if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
         die "Setup '$setup_name' not found"
     fi
+
+    if [[ -z "$setup_branch" ]]; then
+        setup_branch="$setup_name"
+        local temp_file=$(mktemp)
+        jq --arg name "$setup_name" --arg branch "$setup_branch" \
+           '(.setups[] | select(.name == $name) | .branch) = $branch' \
+           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    fi
+
+    local branch="${branch_override:-$setup_branch}"
     
     info "Syncing setup '$setup_name' with remote '$remote_name'..."
     
@@ -315,6 +461,9 @@ COMMANDS:
         
     list
         List all configured setups
+
+    bash:init [setup_name]
+        Initialize bash files from remote for a setup
         
     add-remote <setup_name> <remote_name> <remote_url>
         Add a remote to a setup
@@ -324,10 +473,13 @@ COMMANDS:
         
     remove-remote <setup_name> <remote_name>
         Remove a remote from a setup
+
+    branch-ensure <setup_name> [remote_name]
+        Ensure setup branch exists and is pushed to remote
         
     sync <setup_name> [remote_name] [branch]
         Sync with remote (pull and push)
-        Default remote: origin, Default branch: main
+        Default remote: origin, Default branch: setup branch
         
     status <setup_name>
         Show git status for a setup
@@ -347,6 +499,12 @@ EXAMPLES:
     
     # Sync with remote
     $0 sync my-laptop origin main
+
+    # Initialize bash files from remote
+    $0 bash:init my-laptop
+
+    # Ensure branch exists on remote
+    $0 branch-ensure my-laptop origin
     
     # Check status
     $0 status my-laptop
@@ -383,6 +541,9 @@ main() {
         list)
             cmd_list "$@"
             ;;
+        bash:init)
+            cmd_bash_init "$@"
+            ;;
         add-remote)
             cmd_add_remote "$@"
             ;;
@@ -391,6 +552,9 @@ main() {
             ;;
         remove-remote)
             cmd_remove_remote "$@"
+            ;;
+        branch-ensure)
+            cmd_branch_ensure "$@"
             ;;
         sync)
             cmd_sync "$@"
