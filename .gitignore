@@ -2,6 +2,7 @@
 /tmp/
 *.tmp
 *.log
+test_results.txt
 
 # IDE and editor files
 .vscode/
@@ -17,3 +18,4 @@ desktop.ini
 
 # Special
 logs/
+.specstory/

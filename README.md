@@ -1,11 +1,18 @@
 ## Logs and Process Documentation
 
-All major interactions, plans, pending items, and executed commands are logged in the `logs/` directory:
+The `install.sh` script automatically logs all configuration changes in the `logs/` directory:
 
-- `logs/interaction-YYYY-MM-DDTHH-MM-SS.jsonl`: Chronological log of user requests, system responses, and actions.
-- `logs/rollback-YYYY-MM-DDTHH-MM-SS.jsonl`: Rollback instructions and critical commands for session recovery.
+- `logs/config.log`: Pipe-delimited configuration entries with metadata (timestamp, script, user, pwd, call args, version, key, value)
+- `logs/rollback.log`: Pipe-delimited rollback instructions with revert commands
 
-Refer to these logs for session history, troubleshooting, and rollback procedures. The logging system is described in `.github/copilot-instructions.md`.
+Each log file includes a header row describing the fields and a footer with total row count. Format:
+```
+# TIMESTAMP|SCRIPT|USER|PWD|CALL_ARGS|VERSION|KEY|VALUE
+2026-02-04T13:35:18.280Z|install.sh|user|/path|args|1.0.0|CALL|
+# TOTAL_ROWS: 5
+```
+
+Refer to these logs for installation history, troubleshooting, and rollback procedures. See `INSTALL_WORKFLOW.md` for detailed workflow documentation.
 ## Automated Testing
 
 This project uses [bats-core](https://github.com/bats-core/bats-core) for automated testing of bash scripts.
@@ -74,6 +81,8 @@ Tests check for correct script behavior (e.g., pipe-delimited log creation, shel
 If you add new features or scripts, please add or update tests in the `test/` directory.
 # dotfailes_v2
 
+**Version 1.0.0**
+
 Dotfile management using bare git repositories with platform-specific scripts.
 
 ## Overview
@@ -140,6 +149,34 @@ The script will:
 - Detect your OS and select the appropriate script
 - Guide you through repository initialization
 - Optionally add the dotfiles alias to your shell configuration
+
+**Non-Interactive Mode:**
+```bash
+./install.sh \
+  --repo-path ~/.dotfiles \
+  --setup-name my-laptop \
+  --dotfiles-folder ~/ \
+  --remote https://github.com/user/dotfiles.git \
+  --shell bash \
+  --no-alias
+```
+
+**Available Options:**
+- `--repo-path PATH` - Where to store the bare git repository
+- `--setup-name NAME` - Identifier for this setup (default: hostname-OS)
+- `--dotfiles-folder DIR` - Directory to track (default: $HOME)
+- `--no-alias` - Skip adding shell alias
+- `--remote URL` - Git remote URL for the repository
+- `--shell SHELL` - Force specific shell (bash/zsh/ksh/dash/fish, default: auto-detect)
+- `--rollback` - Undo previous installation (removes aliases, optionally removes repo)
+- `--help` - Show usage information
+
+**Rollback:**
+```bash
+./install.sh --rollback
+```
+
+For detailed workflow documentation, see `INSTALL_WORKFLOW.md`.
 
 #### Manual Installation
 
