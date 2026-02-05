@@ -297,6 +297,12 @@ dotfailes.sh list-remotes <setup_name>
 ```
 Show all remotes configured for a setup.
 
+#### List registered dotfiles repositories
+```bash
+dotfailes.sh registry:list
+```
+Show all registered repositories with their URLs and descriptions.
+
 #### Remove a remote
 ```bash
 dotfailes.sh remove-remote <setup_name> <remote_name>

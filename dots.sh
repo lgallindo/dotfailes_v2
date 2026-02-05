@@ -532,6 +532,23 @@ cmd_list_remotes() {
     git --git-dir="$repo_path" remote -v
 }
 
+# List registered dotfiles repositories
+cmd_registry_list() {
+    init_config
+
+    local count
+    count=$(jq '(.remotes_registry // []) | length' "$CONFIG_FILE")
+
+    if [[ "$count" -eq 0 ]]; then
+        warn "No registry entries configured"
+        return
+    fi
+
+    info "Registered repositories:"
+    echo ""
+    jq -r '(.remotes_registry // [])[] | "  • \(.name)\n    URL: \(.url)\n    Description: \(.description // \"N/A\")\n"' "$CONFIG_FILE"
+}
+
 # Remove remote from a setup
 cmd_remove_remote() {
     local setup_name="$1"
@@ -854,6 +871,9 @@ COMMANDS:
     remove-remote <setup_name> <remote_name>
         Remove a remote from a setup
 
+    registry:list
+        List registered dotfiles repositories
+
     branch-ensure <setup_name> [remote_name]
         Ensure setup branch exists and is pushed to remote
         
@@ -957,6 +977,9 @@ main() {
             ;;
         remove-remote)
             cmd_remove_remote "$@"
+            ;;
+        registry:list)
+            cmd_registry_list "$@"
             ;;
         branch-ensure)
             cmd_branch_ensure "$@"
