@@ -21,3 +21,4 @@ logs/
 .specstory/
 *.backup*
 *.local*
+docs/latest-copilot-log.md

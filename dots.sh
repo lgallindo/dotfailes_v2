@@ -444,6 +444,150 @@ cmd_status() {
     git --git-dir="$repo_path" --work-tree="$work_tree" status
 }
 
+# Merge branch into target branch
+cmd_merge() {
+    local setup_name="$1"
+    local source_branch="${2:-}"
+    local target_branch="${3:-main}"
+    local remote_name="${4:-origin}"
+
+    if [[ -z "$setup_name" ]]; then
+        die "Usage: $0 merge <setup_name> [source_branch] [target_branch] [remote_name]"
+    fi
+
+    init_config
+
+    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+
+    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+        die "Setup '$setup_name' has no work tree configured"
+    fi
+
+    if [[ -z "$source_branch" ]]; then
+        source_branch="$setup_branch"
+    fi
+
+    if [[ -z "$source_branch" ]]; then
+        source_branch="$setup_name"
+    fi
+
+    info "Merging $source_branch into $target_branch for setup '$setup_name'"
+    info "Source branch will be kept intact after merge"
+    
+    # Fetch latest from remote
+    info "Fetching latest from $remote_name..."
+    git --git-dir="$repo_path" fetch "$remote_name" || warn "Fetch failed"
+
+    # Check out target branch (use clean strategy to handle untracked files)
+    info "Checking out $target_branch..."
+    git --git-dir="$repo_path" --work-tree="$work_tree" checkout -f "$target_branch" || die "Failed to checkout $target_branch"
+
+    # Merge source into target
+    info "Merging $remote_name/$source_branch into $target_branch..."
+    if git --git-dir="$repo_path" --work-tree="$work_tree" merge "$remote_name/$source_branch" --allow-unrelated-histories -m "Merge $source_branch into $target_branch"; then
+        success "Merge completed successfully"
+        # Push merged changes
+        info "Pushing merged changes to $remote_name/$target_branch..."
+        git --git-dir="$repo_path" --work-tree="$work_tree" push "$remote_name" "$target_branch" || warn "Push failed"
+        success "Changes pushed to remote"
+        info "Source branch '$source_branch' remains intact on remote"
+    else
+        error "Merge conflict detected"
+        info "Resolve conflicts in $work_tree and run:"
+        echo "  dotfiles add <conflicted_file>"
+        echo "  dotfiles commit -m \"Merge $source_branch into $target_branch\""
+        echo "  dotfiles push"
+        exit 1
+    fi
+}
+
+# Ensure current setup has a remote branch
+cmd_ensure_remote_branch() {
+    local setup_name="$1"
+    local remote_name="${2:-origin}"
+    
+    init_config
+    
+    # If no setup_name provided, use the first setup
+    if [[ -z "$setup_name" ]]; then
+        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+    fi
+    
+    if [[ -z "$setup_name" ]]; then
+        die "No setups configured yet"
+    fi
+    
+    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+    
+    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+        die "Setup '$setup_name' has no work tree configured"
+    fi
+    
+    if [[ -z "$setup_branch" ]]; then
+        setup_branch="$setup_name"
+        local temp_file=$(mktemp)
+        jq --arg name "$setup_name" --arg branch "$setup_branch" \
+           '(.setups[] | select(.name == $name) | .branch) = $branch' \
+           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    fi
+    
+    if ! git --git-dir="$repo_path" remote get-url "$remote_name" >/dev/null 2>&1; then
+        die "Remote '$remote_name' not configured for setup '$setup_name'"
+    fi
+    
+    info "Ensuring remote branch '$setup_branch' for setup '$setup_name' on remote '$remote_name'"
+    
+    # Check if remote branch exists
+    if git --git-dir="$repo_path" ls-remote --heads "$remote_name" "$setup_branch" | grep -q "$setup_branch"; then
+        success "Remote branch '$setup_branch' already exists on $remote_name"
+    else
+        info "Remote branch '$setup_branch' does not exist. Creating and pushing..."
+        
+        # Ensure local branch exists
+        if ! git --git-dir="$repo_path" rev-parse --verify "$setup_branch" >/dev/null 2>&1; then
+            info "Local branch '$setup_branch' does not exist. Creating from current HEAD..."
+            git --git-dir="$repo_path" --work-tree="$work_tree" checkout -B "$setup_branch" || die "Failed to create local branch"
+        else
+            info "Checking out local branch '$setup_branch'..."
+            git --git-dir="$repo_path" --work-tree="$work_tree" checkout "$setup_branch" || die "Failed to checkout branch"
+        fi
+        
+        # Ensure there's at least one commit
+        if ! git --git-dir="$repo_path" rev-parse --verify HEAD >/dev/null 2>&1; then
+            local git_user_name
+            local git_user_email
+            git_user_name=$(git --git-dir="$repo_path" config user.name || echo "")
+            git_user_email=$(git --git-dir="$repo_path" config user.email || echo "")
+            
+            if [[ -z "$git_user_name" || -z "$git_user_email" ]]; then
+                die "No commits exist and git user.name/user.email are not set. Configure them or create a commit before pushing."
+            fi
+            
+            info "No commits found. Creating an empty commit..."
+            git --git-dir="$repo_path" --work-tree="$work_tree" commit --allow-empty -m "Initialize setup branch $setup_branch" || die "Failed to create initial commit"
+        fi
+        
+        # Push to remote
+        info "Pushing branch '$setup_branch' to $remote_name..."
+        git --git-dir="$repo_path" --work-tree="$work_tree" push -u "$remote_name" "$setup_branch" || die "Failed to push branch to remote"
+        success "Remote branch '$setup_branch' created and pushed to $remote_name"
+    fi
+    
+    success "Setup '$setup_name' now has remote branch '$setup_branch' on $remote_name"
+}
+
 # Show help
 cmd_help() {
     cat <<EOF
@@ -477,6 +621,13 @@ COMMANDS:
     branch-ensure <setup_name> [remote_name]
         Ensure setup branch exists and is pushed to remote
         
+    ensure-remote-branch [setup_name] [remote_name]
+        Ensure current (or specified) setup has a remote branch
+        
+    merge <setup_name> [source_branch] [target_branch] [remote_name]
+        Merge source branch into target branch (default: setup branch → main)
+        Source branch is kept intact after merge
+        
     sync <setup_name> [remote_name] [branch]
         Sync with remote (pull and push)
         Default remote: origin, Default branch: setup branch
@@ -505,6 +656,15 @@ EXAMPLES:
 
     # Ensure branch exists on remote
     $0 branch-ensure my-laptop origin
+    
+    # Ensure current setup has remote branch
+    $0 ensure-remote-branch
+    
+    # Or ensure specific setup has remote branch  
+    $0 ensure-remote-branch my-laptop origin
+    
+    # Merge setup branch into main (source branch is kept intact)
+    $0 merge my-laptop TJPE293796-Windows main
     
     # Check status
     $0 status my-laptop
@@ -555,6 +715,12 @@ main() {
             ;;
         branch-ensure)
             cmd_branch_ensure "$@"
+            ;;
+        ensure-remote-branch)
+            cmd_ensure_remote_branch "$@"
+            ;;
+        merge)
+            cmd_merge "$@"
             ;;
         sync)
             cmd_sync "$@"
