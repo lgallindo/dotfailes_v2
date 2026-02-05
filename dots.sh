@@ -182,6 +182,81 @@ cmd_list() {
     jq -r '.setups[] | "  • \(.name)\n    OS: \(.os)\n    Folder: \(.folder)\n    Repo: \(.repo)\n"' "$CONFIG_FILE"
 }
 
+# List bash-related files for a setup
+cmd_bash_list() {
+    local setup_name="$1"
+
+    init_config
+
+    if [[ -z "$setup_name" ]]; then
+        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+    fi
+
+    if [[ -z "$setup_name" ]]; then
+        die "No setups configured yet"
+    fi
+
+    local repo_path
+    local work_tree
+    local setup_branch
+
+    repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+
+    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+        die "Setup '$setup_name' has no work tree configured"
+    fi
+
+    if [[ -z "$setup_branch" ]]; then
+        setup_branch="$setup_name"
+    fi
+
+    echo ""
+    info "Bash files for setup '$setup_name'"
+    echo ""
+
+    if [[ ! -d "$repo_path" ]]; then
+        warn "Repository path does not exist: $repo_path"
+        echo ""
+    fi
+
+    local list_ref=""
+    if git --git-dir="$repo_path" rev-parse --verify "$setup_branch" >/dev/null 2>&1; then
+        list_ref="$setup_branch"
+    elif git --git-dir="$repo_path" rev-parse --verify "refs/remotes/origin/$setup_branch" >/dev/null 2>&1; then
+        list_ref="refs/remotes/origin/$setup_branch"
+    elif git --git-dir="$repo_path" rev-parse --verify HEAD >/dev/null 2>&1; then
+        list_ref="HEAD"
+    fi
+
+    if [[ -z "$list_ref" ]]; then
+        warn "No local or remote branch found for listing tracked files"
+    fi
+
+    local bash_items=(.bashrc .bash_profile .bash_aliases .bashrc.d)
+    for item in "${bash_items[@]}"; do
+        local local_state="no"
+        local tracked_state="no"
+
+        if [[ -e "$work_tree/$item" ]]; then
+            local_state="yes"
+        fi
+
+        if [[ -n "$list_ref" ]] && git --git-dir="$repo_path" ls-tree -r --name-only "$list_ref" -- "$item" 2>/dev/null | grep -q .; then
+            tracked_state="yes"
+        fi
+
+        echo -e "  • ${YELLOW}$item${NC}  (local: $local_state, tracked: $tracked_state)"
+    done
+
+    echo ""
+}
+
 # Show detailed information about a specific setup
 cmd_setup_show() {
     local setup_name="$1"
@@ -700,6 +775,9 @@ COMMANDS:
         Show detailed information about a specific setup
         Displays OS, work tree, repository, branch, remote tracking status
 
+    bash:list [setup_name]
+        List bash-related files for a setup
+
     bash:init [setup_name]
         Initialize bash files from remote for a setup
         
@@ -797,6 +875,9 @@ main() {
             ;;
         setup:show)
             cmd_setup_show "$@"
+            ;;
+        bash:list)
+            cmd_bash_list "$@"
             ;;
         bash:init)
             cmd_bash_init "$@"

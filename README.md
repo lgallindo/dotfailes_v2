@@ -273,6 +273,12 @@ dotfailes.sh list
 ```
 Shows all registered setups with their OS, folder, and repository paths.
 
+#### List bash files for a setup
+```bash
+dotfailes.sh bash:list [setup_name]
+```
+Lists bash-related files (.bashrc, .bash_profile, .bash_aliases, .bashrc.d) and whether they exist locally and are tracked in the setup branch.
+
 #### Add a remote
 ```bash
 dotfailes.sh add-remote <setup_name> <remote_name> <remote_url>
