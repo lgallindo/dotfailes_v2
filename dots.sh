@@ -182,6 +182,96 @@ cmd_list() {
     jq -r '.setups[] | "  • \(.name)\n    OS: \(.os)\n    Folder: \(.folder)\n    Repo: \(.repo)\n"' "$CONFIG_FILE"
 }
 
+# Show detailed information about a specific setup
+cmd_setup_show() {
+    local setup_name="$1"
+    
+    init_config
+    
+    if [[ -z "$setup_name" ]]; then
+        # If no setup name provided, show first setup or prompt
+        local count=$(jq '.setups | length' "$CONFIG_FILE")
+        if [[ "$count" -eq 0 ]]; then
+            die "No setups configured yet"
+        elif [[ "$count" -eq 1 ]]; then
+            setup_name=$(jq -r '.setups[0].name' "$CONFIG_FILE")
+        else
+            die "Usage: $0 setup:show <setup_name>"
+        fi
+    fi
+    
+    # Fetch setup configuration
+    local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
+    
+    if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+    
+    local os=$(echo "$setup_json" | jq -r '.os // "Unknown"')
+    local folder=$(echo "$setup_json" | jq -r '.folder // "N/A"')
+    local repo=$(echo "$setup_json" | jq -r '.repo // "N/A"')
+    local branch=$(echo "$setup_json" | jq -r '.branch // "N/A"')
+    
+    # Display setup information
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Setup: ${NC}${YELLOW}$setup_name${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${BLUE}Operating System:${NC}  $os"
+    echo -e "${BLUE}Work Tree:${NC}         $folder"
+    echo -e "${BLUE}Repository:${NC}        $repo"
+    echo -e "${BLUE}Branch:${NC}            $branch"
+    echo ""
+    
+    # Check if repository exists
+    if [[ ! -d "$repo" ]]; then
+        warn "Repository path does not exist"
+        echo ""
+        return
+    fi
+    
+    # Check repository status
+    info "Repository Status:"
+    echo ""
+    
+    # Check if branch exists locally
+    if git --git-dir="$repo" rev-parse --verify "$branch" &>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} Local branch exists: $branch"
+        
+        # Get last commit info
+        local last_commit=$(git --git-dir="$repo" log -1 --format="%h - %s (%cr)" "$branch" 2>/dev/null || echo "No commits")
+        echo -e "  ${BLUE}Last commit:${NC} $last_commit"
+    else
+        echo -e "  ${YELLOW}⚠${NC} Local branch does not exist: $branch"
+    fi
+    
+    # Check remote tracking
+    local remotes=$(git --git-dir="$repo" remote 2>/dev/null || echo "")
+    if [[ -n "$remotes" ]]; then
+        echo ""
+        echo -e "${BLUE}Remotes:${NC}"
+        while IFS= read -r remote; do
+            local remote_url=$(git --git-dir="$repo" remote get-url "$remote" 2>/dev/null || echo "Unknown")
+            echo -e "  • ${YELLOW}$remote${NC}: $remote_url"
+            
+            # Check if branch exists on remote
+            if git --git-dir="$repo" ls-remote --heads "$remote" "$branch" 2>/dev/null | grep -q "$branch"; then
+                echo -e "    ${GREEN}✓${NC} Remote branch exists: $remote/$branch"
+            else
+                echo -e "    ${YELLOW}⚠${NC} Remote branch does not exist: $remote/$branch"
+            fi
+        done <<< "$remotes"
+    else
+        echo ""
+        warn "No remotes configured"
+    fi
+    
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+}
+
 # Initialize bash files from remote for a setup
 cmd_bash_init() {
     local setup_name="$1"
@@ -606,6 +696,10 @@ COMMANDS:
     list
         List all configured setups
 
+    setup:show <setup_name>
+        Show detailed information about a specific setup
+        Displays OS, work tree, repository, branch, remote tracking status
+
     bash:init [setup_name]
         Initialize bash files from remote for a setup
         
@@ -700,6 +794,9 @@ main() {
             ;;
         list)
             cmd_list "$@"
+            ;;
+        setup:show)
+            cmd_setup_show "$@"
             ;;
         bash:init)
             cmd_bash_init "$@"
