@@ -303,6 +303,12 @@ dotfailes.sh registry:list
 ```
 Show all registered repositories with their URLs and descriptions.
 
+#### Use a registered repository for a setup
+```bash
+dotfailes.sh registry:use <registry_name> [setup_name] [remote_name]
+```
+Sets or updates the setup's remote (default: origin) to the selected registry URL.
+
 #### Remove a remote
 ```bash
 dotfailes.sh remove-remote <setup_name> <remote_name>

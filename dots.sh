@@ -549,6 +549,64 @@ cmd_registry_list() {
     jq -r '(.remotes_registry // [])[] | "  • \(.name)\n    URL: \(.url)\n    Description: \(.description // \"N/A\")\n"' "$CONFIG_FILE"
 }
 
+# Use a registered repository for a setup's remote
+cmd_registry_use() {
+    local registry_name="$1"
+    local setup_name="$2"
+    local remote_name="${3:-origin}"
+
+    if [[ -z "$registry_name" ]]; then
+        die "Usage: $0 registry:use <registry_name> [setup_name] [remote_name]"
+    fi
+
+    init_config
+
+    local registry_json
+    registry_json=$(jq --arg name "$registry_name" '(.remotes_registry // [])[] | select(.name == $name)' "$CONFIG_FILE")
+
+    if [[ -z "$registry_json" ]] || [[ "$registry_json" == "null" ]]; then
+        die "Registry entry '$registry_name' not found"
+    fi
+
+    if [[ -z "$setup_name" ]]; then
+        local count
+        count=$(jq '.setups | length' "$CONFIG_FILE")
+        if [[ "$count" -eq 0 ]]; then
+            die "No setups configured yet"
+        elif [[ "$count" -eq 1 ]]; then
+            setup_name=$(jq -r '.setups[0].name' "$CONFIG_FILE")
+        else
+            die "Usage: $0 registry:use <registry_name> <setup_name> [remote_name]"
+        fi
+    fi
+
+    local repo_path
+    repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+
+    if [[ ! -d "$repo_path" ]]; then
+        die "Repository path does not exist: $repo_path"
+    fi
+
+    local registry_url
+    registry_url=$(echo "$registry_json" | jq -r '.url // empty')
+
+    if [[ -z "$registry_url" ]]; then
+        die "Registry entry '$registry_name' has no url"
+    fi
+
+    if git --git-dir="$repo_path" remote get-url "$remote_name" >/dev/null 2>&1; then
+        git --git-dir="$repo_path" remote set-url "$remote_name" "$registry_url"
+    else
+        git --git-dir="$repo_path" remote add "$remote_name" "$registry_url"
+    fi
+
+    success "Registry '$registry_name' applied to setup '$setup_name' (remote: $remote_name)"
+}
+
 # Remove remote from a setup
 cmd_remove_remote() {
     local setup_name="$1"
@@ -874,6 +932,9 @@ COMMANDS:
     registry:list
         List registered dotfiles repositories
 
+    registry:use <registry_name> [setup_name] [remote_name]
+        Use a registered repository for a setup's remote
+
     branch-ensure <setup_name> [remote_name]
         Ensure setup branch exists and is pushed to remote
         
@@ -980,6 +1041,9 @@ main() {
             ;;
         registry:list)
             cmd_registry_list "$@"
+            ;;
+        registry:use)
+            cmd_registry_use "$@"
             ;;
         branch-ensure)
             cmd_branch_ensure "$@"
