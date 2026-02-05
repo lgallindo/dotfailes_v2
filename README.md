@@ -279,6 +279,12 @@ dotfailes.sh bash:list [setup_name]
 ```
 Lists bash-related files (.bashrc, .bash_profile, .bash_aliases, .bashrc.d) and whether they exist locally and are tracked in the setup branch.
 
+#### Reload bash files for a setup
+```bash
+dotfailes.sh bash:reload [setup_name]
+```
+Reloads bash-related files from the remote setup branch without creating backups.
+
 #### Add a remote
 ```bash
 dotfailes.sh add-remote <setup_name> <remote_name> <remote_url>

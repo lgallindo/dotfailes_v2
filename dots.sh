@@ -425,6 +425,67 @@ cmd_bash_init() {
     success "Bash files initialized in $work_tree"
 }
 
+# Reload bash files from remote for a setup (no backups)
+cmd_bash_reload() {
+    local setup_name="$1"
+
+    init_config
+
+    if [[ -z "$setup_name" ]]; then
+        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+    fi
+
+    if [[ -z "$setup_name" ]]; then
+        die "No setups configured yet"
+    fi
+
+    local repo_path
+    local work_tree
+    local setup_branch
+
+    repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' not found"
+    fi
+
+    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+        die "Setup '$setup_name' has no work tree configured"
+    fi
+
+    if [[ -z "$setup_branch" ]]; then
+        setup_branch="$setup_name"
+        local temp_file
+        temp_file=$(mktemp)
+        jq --arg name "$setup_name" --arg branch "$setup_branch" \
+           '(.setups[] | select(.name == $name) | .branch) = $branch' \
+           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    fi
+
+    if ! git --git-dir="$repo_path" remote get-url origin >/dev/null 2>&1; then
+        die "Remote 'origin' not configured for setup '$setup_name'"
+    fi
+
+    local source_branch="origin/$setup_branch"
+    if [[ -z $(git --git-dir="$repo_path" ls-remote --heads origin "$setup_branch") ]]; then
+        warn "Branch '$setup_branch' not found on origin. Falling back to origin/main."
+        source_branch="origin/main"
+        info "Fetching latest from origin main..."
+        git --git-dir="$repo_path" fetch origin main || warn "Fetch failed or no changes"
+    else
+        info "Fetching latest from origin $setup_branch..."
+        git --git-dir="$repo_path" fetch origin "$setup_branch" || warn "Fetch failed or no changes"
+    fi
+
+    info "Reloading bash files from $source_branch"
+    git --git-dir="$repo_path" --work-tree="$work_tree" checkout "$source_branch" -- \
+        .bashrc .bash_profile .bash_aliases .bashrc.d || die "Checkout failed"
+
+    success "Bash files reloaded in $work_tree"
+}
+
 # Add remote to a setup
 cmd_add_remote() {
     local setup_name="$1"
@@ -780,6 +841,9 @@ COMMANDS:
 
     bash:init [setup_name]
         Initialize bash files from remote for a setup
+
+    bash:reload [setup_name]
+        Reload bash files from remote for a setup (no backups)
         
     add-remote <setup_name> <remote_name> <remote_url>
         Add a remote to a setup
@@ -881,6 +945,9 @@ main() {
             ;;
         bash:init)
             cmd_bash_init "$@"
+            ;;
+        bash:reload)
+            cmd_bash_reload "$@"
             ;;
         add-remote)
             cmd_add_remote "$@"
