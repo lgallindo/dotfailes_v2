@@ -58,16 +58,24 @@ die() {
     exit 1
 }
 
-# Detect OS
+# Detect OS with WSL support and case-insensitivity
 detect_os() {
-    case "$detected_os" in
-        Linux*)     echo "Linux";;
-        Darwin*)    echo "MacOS";;
-        CYGWIN*)    echo "Windows";;
-        MINGW*)     echo "Windows";;
-        MSYS*)      echo "Windows";;
-        *)          echo "Unknown";;
+    local sys_name=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local os_out=""
+    case "$sys_name" in
+        linux*)   os_out="Linux" ;;
+        darwin*)  os_out="MacOS-Darwin" ;;
+        cygwin*)  os_out="Windows-CYGWIN" ;;
+        mingw*)   os_out="Windows-MINGW" ;;
+        msys*)    os_out="Windows-MSYS" ;;
+        *)        os_out="$(uname -s)" ;;
     esac
+
+    # WSL Detection
+    if grep -qi "microsoft" /proc/version 2>/dev/null || uname -r | grep -qi "microsoft"; then
+        os_out="${os_out}-WSL"
+    fi
+    echo "$os_out"
 }
 
 # Check if jq is installed
@@ -306,6 +314,42 @@ main() {
     append_config "USER" "$USER"
     append_config "USERNAME" "$USERNAME"
     
+    # Detailed Debug Information
+    echo -e "${BLUE}--- ENVIRONMENT DEBUG ---${NC}"
+    
+    local os_distro="Unknown"
+    [[ -f /etc/os-release ]] && os_distro=$(grep PRETTY_NAME /etc/os-release | cut -d'=' -f2 | tr -d '"')
+    echo "OS/Distro: $os_distro"
+    append_config "OS_DISTRO" "$os_distro"
+    
+    local host_model="Unknown"
+    [[ -f /sys/class/dmi/id/product_name ]] && host_model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "Unknown")
+    echo "Host (Model): $host_model"
+    append_config "HOST_MODEL" "$host_model"
+    
+    echo "OS Name: $(uname -o 2>/dev/null || echo "Unknown")"
+    append_config "UNAME_O" "$(uname -o 2>/dev/null || echo "Unknown")"
+    
+    echo "Kernel: $(uname -r 2>/dev/null || echo "Unknown")"
+    append_config "KERNEL" "$(uname -r 2>/dev/null || echo "Unknown")"
+    
+    echo "Shell: $(basename "$SHELL" 2>/dev/null || echo "Unknown")"
+    append_config "SHELL_EXEC" "$(basename "$SHELL" 2>/dev/null || echo "Unknown")"
+    
+    echo "Arch: $(uname -m 2>/dev/null || echo "Unknown")"
+    append_config "UNAME_M" "$(uname -m 2>/dev/null || echo "Unknown")"
+    
+    local cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^[ \t]*//' 2>/dev/null || echo "Unknown")
+    echo "CPU: $cpu_model"
+    append_config "CPU_MODEL" "$cpu_model"
+    
+    local gpu_model="Unknown"
+    command -v lspci &> /dev/null && gpu_model=$(lspci | grep -i vga | cut -d':' -f3 | sed 's/^[ \t]*//' | head -1 2>/dev/null || echo "Unknown")
+    echo "GPU: $gpu_model"
+    append_config "GPU_MODEL" "$gpu_model"
+    
+    echo -e "${BLUE}-------------------------${NC}"
+    echo ""
     # Parse CLI arguments for non-interactive mode
     while [[ $# -gt 0 ]]; do
         case "$1" in

@@ -10,6 +10,9 @@ DEFAULT_DOTFILES_DIR="${HOME}/.dotfailes"
 DOTFILES_DIR="${DOTFILES_DIR:-$DEFAULT_DOTFILES_DIR}"
 CONFIG_FILE="${DOTFILES_DIR}/config.json"
 
+# Global state
+SELECTED_SETUP=""
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -20,6 +23,39 @@ NC='\033[0m' # No Color
 # Helper functions
 info() {
     echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+# Run git command for a setup
+_git_run() {
+    local setup_name="${1:-$SELECTED_SETUP}"
+    shift
+    local command="$1"
+    shift
+
+    init_config
+    
+    # If no setup specified, use the first one as default
+    if [[ -z "$setup_name" ]]; then
+        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+    fi
+
+    if [[ -z "$setup_name" ]]; then
+        die "No setups configured yet. Use 'dots init' or 'dots clone' first."
+    fi
+
+    local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
+    if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
+        die "Setup '$setup_name' not found in configuration."
+    fi
+
+    local repo_path=$(echo "$setup_json" | jq -r '.repo')
+    local work_tree=$(echo "$setup_json" | jq -r '.folder')
+
+    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+        die "Setup '$setup_name' has no repository path."
+    fi
+
+    git --git-dir="$repo_path" --work-tree="$work_tree" "$command" "$@"
 }
 
 success() {
@@ -52,16 +88,68 @@ EOF
     fi
 }
 
-# Get OS type
+# Get OS type with WSL detection and case-insensitivity
 get_os() {
-    case "$(uname -s)" in
-        Linux*)     echo "Linux";;
-        Darwin*)    echo "MacOS";;
-        CYGWIN*)    echo "Windows";;
-        MINGW*)     echo "Windows";;
-        MSYS*)      echo "Windows";;
-        *)          echo "Unknown";;
+    local sys_name=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local os_out=""
+    case "$sys_name" in
+        linux*)   os_out="Linux" ;;
+        darwin*)  os_out="MacOS-Darwin" ;;
+        cygwin*)  os_out="Windows-CYGWIN" ;;
+        mingw*)   os_out="Windows-MINGW" ;;
+        msys*)    os_out="Windows-MSYS" ;;
+        *)        os_out="$(uname -s)" ;;
     esac
+
+    # WSL Detection (check /proc/version or uname -r)
+    if grep -qi "microsoft" /proc/version 2>/dev/null || uname -r | grep -qi "microsoft"; then
+        os_out="${os_out}-WSL"
+    fi
+    echo "$os_out"
+}
+
+# Collect environment metadata
+get_env_metadata() {
+    local metadata=""
+    
+    # OS/Distro
+    local distro="Unknown"
+    if [[ -f /etc/os-release ]]; then
+        distro=$(grep PRETTY_NAME /etc/os-release | cut -d'=' -f2 | tr -d '"')
+    fi
+    metadata+="OS_Distro: $distro\n"
+    
+    # Host (Model)
+    local host="Unknown"
+    if [[ -f /sys/class/dmi/id/product_name ]]; then
+        host=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "Unknown")
+    fi
+    metadata+="Host_Model: $host\n"
+    
+    # OS Name (uname -o)
+    metadata+="OS_Name: $(uname -o 2>/dev/null || echo "Unknown")\n"
+    
+    # Kernel
+    metadata+="Kernel: $(uname -r 2>/dev/null || echo "Unknown")\n"
+    
+    # Shell
+    metadata+="Shell: $(basename "$SHELL" 2>/dev/null || echo "Unknown")\n"
+    
+    # Machine Architecture
+    metadata+="Arch: $(uname -m 2>/dev/null || echo "Unknown")\n"
+    
+    # CPU
+    local cpu=$(grep "model name" /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^[ \t]*//' 2>/dev/null || echo "Unknown")
+    metadata+="CPU: $cpu\n"
+    
+    # GPU
+    local gpu="Unknown"
+    if command -v lspci &> /dev/null; then
+        gpu=$(lspci | grep -i vga | cut -d':' -f3 | sed 's/^[ \t]*//' | head -1 2>/dev/null || echo "Unknown")
+    fi
+    metadata+="GPU: $gpu\n"
+    
+    echo -e "$metadata"
 }
 
 # Initialize bare git repository
@@ -179,82 +267,39 @@ cmd_list() {
     
     info "Configured setups:"
     echo ""
-    jq -r '.setups[] | "  • \(.name)\n    OS: \(.os)\n    Folder: \(.folder)\n    Repo: \(.repo)\n"' "$CONFIG_FILE"
+    
+    # Process each setup to show remotes
+    jq -c '.setups[]' "$CONFIG_FILE" | while read -r setup; do
+        local name=$(echo "$setup" | jq -r '.name')
+        local os=$(echo "$setup" | jq -r '.os')
+        local folder=$(echo "$setup" | jq -r '.folder')
+        local repo=$(echo "$setup" | jq -r '.repo')
+        
+        echo -e "  • ${YELLOW}${name}${NC}"
+        echo -e "    OS:     $os"
+        echo -e "    Folder: $folder"
+        echo -e "    Repo:   $repo"
+        
+        # Try to get remotes from git
+        if [[ -d "$repo" ]]; then
+            local remotes=$(git --git-dir="$repo" remote -v 2>/dev/null | awk '{print "    Remote: " $1 " (" $2 ")"}' | sort -u)
+            if [[ -n "$remotes" ]]; then
+                echo "$remotes"
+            else
+                echo -e "    Remote: ${RED}None${NC}"
+            fi
+        else
+            echo -e "    Remote: ${RED}Repo directory missing${NC}"
+        fi
+        echo ""
+    done
 }
 
 # List bash-related files for a setup
 cmd_bash_list() {
-    local setup_name="$1"
-
-    init_config
-
-    if [[ -z "$setup_name" ]]; then
-        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-    fi
-
-    if [[ -z "$setup_name" ]]; then
-        die "No setups configured yet"
-    fi
-
-    local repo_path
-    local work_tree
-    local setup_branch
-
-    repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
-
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
-        die "Setup '$setup_name' not found"
-    fi
-
-    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
-        die "Setup '$setup_name' has no work tree configured"
-    fi
-
-    if [[ -z "$setup_branch" ]]; then
-        setup_branch="$setup_name"
-    fi
-
-    echo ""
-    info "Bash files for setup '$setup_name'"
-    echo ""
-
-    if [[ ! -d "$repo_path" ]]; then
-        warn "Repository path does not exist: $repo_path"
-        echo ""
-    fi
-
-    local list_ref=""
-    if git --git-dir="$repo_path" rev-parse --verify "$setup_branch" >/dev/null 2>&1; then
-        list_ref="$setup_branch"
-    elif git --git-dir="$repo_path" rev-parse --verify "refs/remotes/origin/$setup_branch" >/dev/null 2>&1; then
-        list_ref="refs/remotes/origin/$setup_branch"
-    elif git --git-dir="$repo_path" rev-parse --verify HEAD >/dev/null 2>&1; then
-        list_ref="HEAD"
-    fi
-
-    if [[ -z "$list_ref" ]]; then
-        warn "No local or remote branch found for listing tracked files"
-    fi
-
-    local bash_items=(.bashrc .bash_profile .bash_aliases .bashrc.d)
-    for item in "${bash_items[@]}"; do
-        local local_state="no"
-        local tracked_state="no"
-
-        if [[ -e "$work_tree/$item" ]]; then
-            local_state="yes"
-        fi
-
-        if [[ -n "$list_ref" ]] && git --git-dir="$repo_path" ls-tree -r --name-only "$list_ref" -- "$item" 2>/dev/null | grep -q .; then
-            tracked_state="yes"
-        fi
-
-        echo -e "  • ${YELLOW}$item${NC}  (local: $local_state, tracked: $tracked_state)"
+    _git_run "" ls-tree -r --name-only HEAD | grep -E "^\.bash" | while read -r item; do
+        echo -e "  • ${YELLOW}$item${NC}"
     done
-
-    echo ""
 }
 
 # Show detailed information about a specific setup
@@ -742,7 +787,113 @@ cmd_status() {
     fi
     
     info "Status for setup '$setup_name':"
-    git --git-dir="$repo_path" --work-tree="$work_tree" status
+    _git_run "$setup_name" status
+}
+
+# Add files for a setup
+cmd_add() {
+    local setup_name="$1"
+    shift
+    _git_run "$setup_name" add "$@"
+}
+
+# Commit changes for a setup with automated rich messages
+cmd_commit() {
+    local setup_name="$1"
+    shift
+    
+    init_config
+    if [[ -z "$setup_name" ]] || [[ "$setup_name" == "--" ]]; then
+        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+    fi
+    
+    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    
+    # 1. Identify files
+    local files=$(git --git-dir="$repo_path" --work-tree="$work_tree" status --porcelain | awk '{print $2}' | xargs | sed 's/ /, /g')
+    if [[ -z "$files" ]]; then
+        warn "No changes to commit"
+        return
+    fi
+    
+    # 2. Determine Type & Scope
+    local type="fix"
+    if git --git-dir="$repo_path" --work-tree="$work_tree" status --porcelain | grep -q "^??"; then
+        type="feat"
+    fi
+    local scope=$(basename "$SHELL")
+    
+    # 3. Determine Subject
+    local subject="update $files"
+    
+    # 4. Handle User Message (Body)
+    local user_msg=""
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "-m" ]]; then
+            user_msg="$2"
+            shift 2
+        else
+            shift
+        fi
+    done
+    
+    # 5. Determine Footer (Metadata changes)
+    local meta_file="${repo_path}/info/last_metadata"
+    local current_meta=$(get_env_metadata)
+    local footer=""
+    
+    if [[ -f "$meta_file" ]]; then
+        local old_meta=$(cat "$meta_file")
+        # Compare line by line
+        while IFS= read -r line; do
+            local key=$(echo "$line" | cut -d':' -f1)
+            local old_val=$(echo "$old_meta" | grep "^$key:" | cut -d':' -f2- | sed 's/^[ \t]*//')
+            local new_val=$(echo "$line" | cut -d':' -f2- | sed 's/^[ \t]*//')
+            
+            if [[ "$old_val" != "$new_val" && -n "$old_val" ]]; then
+                footer+="${key}: ${old_val} -> ${new_val}\n"
+            fi
+        done <<< "$current_meta"
+    fi
+    
+    # Save current metadata for next time
+    mkdir -p "$(dirname "$meta_file")"
+    echo -e "$current_meta" > "$meta_file"
+    
+    # 6. Build Message
+    local commit_msg="${type}(${scope}): ${subject}"
+    if [[ -n "$user_msg" ]]; then
+        commit_msg+="\n\n${user_msg}"
+    fi
+    if [[ -n "$footer" ]]; then
+        commit_msg+="\n\n${footer}"
+    fi
+    
+    # 7. Execute Commit
+    info "Committing with message: ${type}(${scope}): ${subject}"
+    git --git-dir="$repo_path" --work-tree="$work_tree" commit -m "$(echo -e "$commit_msg")"
+}
+
+# Push changes for a setup
+cmd_push() {
+    local setup_name="$1"
+    shift
+    _git_run "$setup_name" push "$@"
+}
+
+# Pull changes for a setup
+cmd_pull() {
+    local setup_name="$1"
+    shift
+    _git_run "$setup_name" pull "$@"
+}
+
+# Show diff for a setup
+cmd_diff() {
+    local setup_name="$1"
+    shift
+    _git_run "$setup_name" diff "$@"
 }
 
 # Merge branch into target branch
@@ -952,6 +1103,22 @@ COMMANDS:
     status <setup_name>
         Show git status for a setup
         
+    add <setup_name> [git_args]
+        Add files to tracking (proxies to git add)
+        Use '--' as setup_name to use the default setup.
+        
+    commit <setup_name> [git_args]
+        Commit changes (proxies to git commit)
+        
+    push <setup_name> [git_args]
+        Push changes (proxies to git push)
+        
+    pull <setup_name> [git_args]
+        Pull changes (proxies to git pull)
+        
+    diff <setup_name> [git_args]
+        Show differences (proxies to git diff)
+        
     help
         Show this help message
 
@@ -1000,6 +1167,19 @@ EOF
 
 # Main command dispatcher
 main() {
+    # Global option parsing
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --setup|--branch)
+                SELECTED_SETUP="$2"
+                shift 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
     if [[ $# -eq 0 ]]; then
         cmd_help
         exit 0
@@ -1009,60 +1189,29 @@ main() {
     shift
     
     case "$command" in
-        init)
-            cmd_init "$@"
-            ;;
-        clone)
-            cmd_clone "$@"
-            ;;
-        list)
-            cmd_list "$@"
-            ;;
-        setup:show)
-            cmd_setup_show "$@"
-            ;;
-        bash:list)
-            cmd_bash_list "$@"
-            ;;
-        bash:init)
-            cmd_bash_init "$@"
-            ;;
-        bash:reload)
-            cmd_bash_reload "$@"
-            ;;
-        add-remote)
-            cmd_add_remote "$@"
-            ;;
-        list-remotes)
-            cmd_list_remotes "$@"
-            ;;
-        remove-remote)
-            cmd_remove_remote "$@"
-            ;;
-        registry:list)
-            cmd_registry_list "$@"
-            ;;
-        registry:use)
-            cmd_registry_use "$@"
-            ;;
-        branch-ensure)
-            cmd_branch_ensure "$@"
-            ;;
-        ensure-remote-branch)
-            cmd_ensure_remote_branch "$@"
-            ;;
-        merge)
-            cmd_merge "$@"
-            ;;
-        sync)
-            cmd_sync "$@"
-            ;;
-        status)
-            cmd_status "$@"
-            ;;
-        help|--help|-h)
-            cmd_help
-            ;;
+        init)             cmd_init "$@" ;;
+        clone)            cmd_clone "$@" ;;
+        list)             cmd_list "$@" ;;
+        setup:show)       cmd_setup_show "$@" ;;
+        bash:list)        cmd_bash_list "$@" ;;
+        bash:init)        cmd_bash_init "$@" ;;
+        bash:reload)      cmd_bash_reload "$@" ;;
+        add-remote)       cmd_add_remote "$@" ;;
+        list-remotes)     cmd_list_remotes "$@" ;;
+        remove-remote)    cmd_remove_remote "$@" ;;
+        registry:list)    cmd_registry_list "$@" ;;
+        registry:use)     cmd_registry_use "$@" ;;
+        branch-ensure)    cmd_branch_ensure "$@" ;;
+        ensure-remote-branch) cmd_ensure_remote_branch "$@" ;;
+        merge)            cmd_merge "$@" ;;
+        sync)             cmd_sync "$@" ;;
+        status)           cmd_status "$@" ;;
+        add)              cmd_add "$@" ;;
+        commit)           cmd_commit "$@" ;;
+        push)             cmd_push "$@" ;;
+        pull)             cmd_pull "$@" ;;
+        diff)             cmd_diff "$@" ;;
+        help|--help|-h)   cmd_help ;;
         *)
             error "Unknown command: $command"
             echo ""
