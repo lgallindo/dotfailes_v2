@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installation script for dotfailes
-# This script helps you get started with dotfailes quickly
+# This script helps you get started with dots quickly
 
 set -e
 
@@ -352,7 +352,7 @@ main() {
             ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             # Alias
             if [[ -z "$NO_ALIAS" ]]; then
-                ALIAS_COMMENT="# dotfailes alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
+                ALIAS_COMMENT="# dots alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
                 ALIAS_CMD="alias dotfiles='git --git-dir=$REPO_PATH --work-tree=$DOTFILES_FOLDER'"
                 BASH_ALIASES="$HOME/.bash_aliases"
                 if [[ -f "$BASH_ALIASES" && -f "$HOME/.bashrc" && $(grep -E "^ *(source|\. +) *~?/.bash_aliases" "$HOME/.bashrc") ]]; then
@@ -437,7 +437,7 @@ main() {
                     echo "Enter the URL for your dotfiles repo (for comment, optional):"
                     read -r REPO_URL
                 fi
-                ALIAS_COMMENT="# dotfailes alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
+                ALIAS_COMMENT="# dots alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
                 ALIAS_CMD="alias dotfiles='git --git-dir=$REPO_PATH --work-tree=$DOTFILES_FOLDER'"
                 BASH_ALIASES="$HOME/.bash_aliases"
                 if [[ -f "$BASH_ALIASES" && -f "$HOME/.bashrc" && $(grep -E "^ *(source|\. +) *~?/.bash_aliases" "$HOME/.bashrc") ]]; then

@@ -67,28 +67,28 @@ Before submitting a PR, test your changes:
 **Bash script:**
 ```bash
 # Test on Linux
-./dotfailes.sh help
-./dotfailes.sh init /tmp/test-repo test-setup /tmp/test-home
-./dotfailes.sh list
-./dotfailes.sh status test-setup
+./dots.sh help
+./dots.sh init /tmp/test-repo test-setup /tmp/test-home
+./dots.sh list
+./dots.sh status test-setup
 ```
 
 **PowerShell script:**
 ```powershell
 # Test on Windows/PowerShell
-.\dotfailes.ps1 help
-.\dotfailes.ps1 init C:\temp\test-repo test-setup C:\temp\test-home
-.\dotfailes.ps1 list
-.\dotfailes.ps1 status test-setup
+.\dots.ps1 help
+.\dots.ps1 init C:\temp\test-repo test-setup C:\temp\test-home
+.\dots.ps1 list
+.\dots.ps1 status test-setup
 ```
 
 **Zsh script:**
 ```zsh
 # Test on MacOS
-./dotfailes.zsh help
-./dotfailes.zsh init /tmp/test-repo test-setup /tmp/test-home
-./dotfailes.zsh list
-./dotfailes.zsh status test-setup
+./dots.zsh help
+./dots.zsh init /tmp/test-repo test-setup /tmp/test-home
+./dots.zsh list
+./dots.zsh status test-setup
 ```
 
 ### Documentation
@@ -121,9 +121,9 @@ dotfailes_v2/
 ├── README.md            # Main documentation
 ├── EXAMPLES.md          # Usage examples
 ├── CONTRIBUTING.md      # This file
-├── dotfailes.sh         # Bash script
-├── dotfailes.zsh        # Zsh script
-├── dotfailes.ps1        # PowerShell script
+├── dots.sh         # Bash script
+├── dots.zsh        # Zsh script
+├── dots.ps1        # PowerShell script
 └── .gitignore          # Git ignore rules
 ```
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# dotfailes - Dotfile management using bare git repositories
+# dots - Dotfile management using bare git repositories
 # Copyright (C) 2025
 # Licensed under GNU General Public License v3.0
 
@@ -341,10 +341,10 @@ function Invoke-Status {
 # Show help
 function Show-Help {
     @"
-dotfailes - Dotfile management using bare git repositories
+dots - Dotfile management using bare git repositories
 
 USAGE:
-    .\dotfailes.ps1 <command> [arguments]
+    .\dots.ps1 <command> [arguments]
 
 COMMANDS:
     init <repo_path> [setup_name] [dotfiles_folder]
@@ -377,19 +377,19 @@ COMMANDS:
 
 EXAMPLES:
     # Initialize new dotfile repository
-    .\dotfailes.ps1 init C:\Users\username\.dotfiles my-laptop C:\Users\username
+    .\dots.ps1 init C:\Users\username\.dotfiles my-laptop C:\Users\username
     
     # Clone existing dotfile repository
-    .\dotfailes.ps1 clone https://github.com/user/dotfiles.git C:\Users\username\.dotfiles
+    .\dots.ps1 clone https://github.com/user/dotfiles.git C:\Users\username\.dotfiles
     
     # Add a remote
-    .\dotfailes.ps1 add-remote my-laptop origin https://github.com/user/dotfiles.git
+    .\dots.ps1 add-remote my-laptop origin https://github.com/user/dotfiles.git
     
     # Sync with remote
-    .\dotfailes.ps1 sync my-laptop origin main
+    .\dots.ps1 sync my-laptop origin main
     
     # Check status
-    .\dotfailes.ps1 status my-laptop
+    .\dots.ps1 status my-laptop
 
 CONFIGURATION:
     Configuration is stored in: $($script:ConfigFile)

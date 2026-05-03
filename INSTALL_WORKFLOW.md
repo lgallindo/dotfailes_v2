@@ -125,7 +125,7 @@ Read $SHELL_CHOICE (from --shell or "auto")
   ↓
 Determine:
   - DETECTED_SHELL (bash/zsh/ksh/fish/etc)
-  - SCRIPT (dotfailes.sh/dotfailes.zsh/etc)
+  - SCRIPT (dots.sh/dots.zsh/etc)
   - SHELL_CONFIG (~/.bashrc, ~/.zshrc, etc)
   ↓
 Log: OS, SHELL, SCRIPT, SHELL_CONFIG
@@ -148,7 +148,7 @@ Determine alias target:
   - OR $SHELL_CONFIG
   ↓
 Append alias:
-  # dotfailes alias (repo: <URL>)
+  # dots alias (repo: <URL>)
   alias dotfiles='git --git-dir=$REPO_PATH --work-tree=$DOTFILES_FOLDER'
   ↓
 Log rollback instruction
@@ -257,13 +257,13 @@ END
 
 Modified file (e.g., `~/.bashrc` or `~/.bash_aliases`):
 ```bash
-# dotfailes alias (repo: https://github.com/user/dotfiles)
+# dots alias (repo: https://github.com/user/dotfiles)
 alias dotfiles='git --git-dir=/home/user/.dotfiles --work-tree=/home/user'
 ```
 
 ### Dotfailes Config
 
-Created by called script (`dotfailes.sh`):
+Created by called script (`dots.sh`):
 ```json
 $HOME/.dotfailes/config.json
 ```

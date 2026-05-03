@@ -79,7 +79,7 @@ bats test/install.bats
 Tests check for correct script behavior (e.g., pipe-delimited log creation, shell detection, alias logging).
 
 If you add new features or scripts, please add or update tests in the `test/` directory.
-# dotfailes_v2
+# dots_v2
 
 **Version 1.0.0**
 
@@ -181,9 +181,9 @@ For detailed workflow documentation, see `INSTALL_WORKFLOW.md`.
 #### Manual Installation
 
 Or download individual scripts:
-- `dotfailes.sh` - for Linux and general Unix systems
-- `dotfailes.zsh` - for MacOS (zsh)
-- `dotfailes.ps1` - for Windows (PowerShell/Git Bash/MSYS2)
+- `dots.sh` - for Linux and general Unix systems
+- `dots.zsh` - for MacOS (zsh)
+- `dots.ps1` - for Windows (PowerShell/Git Bash/MSYS2)
 
 ## Quick Start
 
@@ -191,12 +191,12 @@ Or download individual scripts:
 
 **Bash/Zsh:**
 ```bash
-./dotfailes.sh init ~/.dotfiles my-laptop ~/
+./dots.sh init ~/.dotfiles my-laptop ~/
 ```
 
 **PowerShell:**
 ```powershell
-.\dotfailes.ps1 init C:\Users\username\.dotfiles my-laptop C:\Users\username
+.\dots.ps1 init C:\Users\username\.dotfiles my-laptop C:\Users\username
 ```
 
 ### 2. Add an alias to your shell configuration
@@ -236,12 +236,12 @@ dotfiles push -u origin main
 
 **Bash/Zsh:**
 ```bash
-./dotfailes.sh clone https://github.com/yourusername/dotfiles.git ~/.dotfiles
+./dots.sh clone https://github.com/yourusername/dotfiles.git ~/.dotfiles
 ```
 
 **PowerShell:**
 ```powershell
-.\dotfailes.ps1 clone https://github.com/yourusername/dotfiles.git C:\Users\username\.dotfiles
+.\dots.ps1 clone https://github.com/yourusername/dotfiles.git C:\Users\username\.dotfiles
 ```
 
 ## Usage
@@ -252,7 +252,7 @@ All scripts support the same commands:
 
 #### Initialize a new repository
 ```bash
-dotfailes.sh init <repo_path> [setup_name] [dotfiles_folder]
+dots.sh init <repo_path> [setup_name] [dotfiles_folder]
 ```
 - `repo_path`: Path where the bare git repository will be stored
 - `setup_name`: (optional) Name for this setup (defaults to hostname-OS)
@@ -260,7 +260,7 @@ dotfailes.sh init <repo_path> [setup_name] [dotfiles_folder]
 
 #### Clone an existing repository
 ```bash
-dotfailes.sh clone <remote_url> <repo_path> [setup_name] [dotfiles_folder]
+dots.sh clone <remote_url> <repo_path> [setup_name] [dotfiles_folder]
 ```
 - `remote_url`: Git remote URL to clone from
 - `repo_path`: Local path for the bare repository
@@ -269,67 +269,67 @@ dotfailes.sh clone <remote_url> <repo_path> [setup_name] [dotfiles_folder]
 
 #### List configured setups
 ```bash
-dotfailes.sh list
+dots.sh list
 ```
 Shows all registered setups with their OS, folder, and repository paths.
 
 #### List bash files for a setup
 ```bash
-dotfailes.sh bash:list [setup_name]
+dots.sh bash:list [setup_name]
 ```
 Lists bash-related files (.bashrc, .bash_profile, .bash_aliases, .bashrc.d) and whether they exist locally and are tracked in the setup branch.
 
 #### Reload bash files for a setup
 ```bash
-dotfailes.sh bash:reload [setup_name]
+dots.sh bash:reload [setup_name]
 ```
 Reloads bash-related files from the remote setup branch without creating backups.
 
 #### Add a remote
 ```bash
-dotfailes.sh add-remote <setup_name> <remote_name> <remote_url>
+dots.sh add-remote <setup_name> <remote_name> <remote_url>
 ```
 Add a git remote to a setup (e.g., origin, backup, etc.).
 
 #### List remotes
 ```bash
-dotfailes.sh list-remotes <setup_name>
+dots.sh list-remotes <setup_name>
 ```
 Show all remotes configured for a setup.
 
 #### List registered dotfiles repositories
 ```bash
-dotfailes.sh registry:list
+dots.sh registry:list
 ```
 Show all registered repositories with their URLs and descriptions.
 
 #### Use a registered repository for a setup
 ```bash
-dotfailes.sh registry:use <registry_name> [setup_name] [remote_name]
+dots.sh registry:use <registry_name> [setup_name] [remote_name]
 ```
 Sets or updates the setup's remote (default: origin) to the selected registry URL.
 
 #### Remove a remote
 ```bash
-dotfailes.sh remove-remote <setup_name> <remote_name>
+dots.sh remove-remote <setup_name> <remote_name>
 ```
 Remove a git remote from a setup.
 
 #### Sync with remote
 ```bash
-dotfailes.sh sync <setup_name> [remote_name] [branch]
+dots.sh sync <setup_name> [remote_name] [branch]
 ```
 Pull and push changes to/from remote. Defaults: remote=origin, branch=main.
 
 #### Check status
 ```bash
-dotfailes.sh status <setup_name>
+dots.sh status <setup_name>
 ```
 Show git status for a setup (tracked/untracked files, changes, etc.).
 
 #### Get help
 ```bash
-dotfailes.sh help
+dots.sh help
 ```
 
 ## Configuration
@@ -457,10 +457,10 @@ You can manage different setups on the same machine (e.g., work and personal):
 
 ```bash
 # Initialize work setup
-./dotfailes.sh init ~/.dotfiles-work work-setup ~/work
+./dots.sh init ~/.dotfiles-work work-setup ~/work
 
 # Initialize personal setup
-./dotfailes.sh init ~/.dotfiles-personal personal-setup ~/
+./dots.sh init ~/.dotfiles-personal personal-setup ~/
 
 # Create separate aliases
 alias dotfiles-work='git --git-dir=$HOME/.dotfiles-work --work-tree=$HOME/work'
@@ -533,7 +533,7 @@ dotfiles checkout
 ### Permission issues on scripts
 Make scripts executable:
 ```bash
-chmod +x dotfailes.sh dotfailes.zsh
+chmod +x dots.sh dots.zsh
 ```
 
 ## Contributing

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dotfailes - Dotfile management using bare git repositories
+# dots - Dotfile management using bare git repositories
 # Copyright (C) 2025
 # Licensed under GNU General Public License v3.0
 
@@ -892,7 +892,7 @@ cmd_ensure_remote_branch() {
 # Show help
 cmd_help() {
     cat <<EOF
-dotfailes - Dotfile management using bare git repositories
+dots - Dotfile management using bare git repositories
 
 USAGE:
     $0 <command> [arguments]

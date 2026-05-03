@@ -13,7 +13,7 @@ A typical developer uses multiple machines with:
 - **Environment variation**: work laptop, personal desktop, cloud VMs, containers
 - **Version variation**: dotfile versions may need to differ by OS/shell/version
 
-Currently, dotfailes treats all setups equally with a single `~/.dotfailes/config.csv`. This doesn't scale well when:
+Currently, dots treats all setups equally with a single `~/.dotfailes/config.csv`. This doesn't scale well when:
 - `.zshrc` on macOS differs significantly from `.zshrc` on Linux
 - Windows PowerShell profiles differ from Git Bash profiles
 - Work configurations must be isolated from personal ones
@@ -264,7 +264,7 @@ setup:
 
 **OS compatibility matrix:**
 ```
-dotfailes v2.0.0 requires:
+dots v2.0.0 requires:
 ├── macOS 12+ (Monterey+)
 ├── Ubuntu 20.04+ (Focal+)
 ├── Windows 10 21H2+
@@ -306,26 +306,26 @@ Single `~/.dotfailes/config.csv` with hierarchical setup definitions:
 **File:** `~/.dotfailes/config.csv`
 ```
 [5|TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|SETUP_NAME|PARENT_SETUP|OS|OS_VERSION|SHELL|SHELL_VERSION|ENV_TYPE|MANIFEST_PATH]
-2025-12-22T14:00:00.000Z|dotfailes.sh|lucas|/home/lucas|dotfailes.sh init|1|base-macos|NULL|macOS|13.2|zsh|5.9|personal|manifests/base-macos.csv
-2025-12-22T14:05:00.000Z|dotfailes.sh|lucas|/home/lucas|dotfailes.sh init|1|work-macos|base-macos|macOS|13.2|zsh|5.9|work|manifests/work-macos.csv
-2025-12-22T14:10:00.000Z|dotfailes.sh|lucas|/tmp|dotfailes.sh init|1|ubuntu-vm|NULL|Linux|22.04|bash|5.1|cloud|manifests/ubuntu-vm.csv
+2025-12-22T14:00:00.000Z|dots.sh|lucas|/home/lucas|dots.sh init|1|base-macos|NULL|macOS|13.2|zsh|5.9|personal|manifests/base-macos.csv
+2025-12-22T14:05:00.000Z|dots.sh|lucas|/home/lucas|dots.sh init|1|work-macos|base-macos|macOS|13.2|zsh|5.9|work|manifests/work-macos.csv
+2025-12-22T14:10:00.000Z|dots.sh|lucas|/tmp|dots.sh init|1|ubuntu-vm|NULL|Linux|22.04|bash|5.1|cloud|manifests/ubuntu-vm.csv
 ```
 
 ### Manifest CSV Format
 **File:** `manifests/base-macos.csv`
 ```
 [4|TIMESTAMP|SCRIPT|SOURCE|TARGET|MERGE_STRATEGY]
-2025-12-22T14:00:00.000Z|dotfailes.sh|files/common/.gitconfig|~/.gitconfig|replace
-2025-12-22T14:00:01.000Z|dotfailes.sh|files/macos/.zshrc|~/.zshrc|merge
-2025-12-22T14:00:02.000Z|dotfailes.sh|files/shell/zsh/|~/.zsh.d/|copy_dir
-2025-12-22T14:00:03.000Z|dotfailes.sh|files/macos/.zshenv|~/.zshenv|replace
+2025-12-22T14:00:00.000Z|dots.sh|files/common/.gitconfig|~/.gitconfig|replace
+2025-12-22T14:00:01.000Z|dots.sh|files/macos/.zshrc|~/.zshrc|merge
+2025-12-22T14:00:02.000Z|dots.sh|files/shell/zsh/|~/.zsh.d/|copy_dir
+2025-12-22T14:00:03.000Z|dots.sh|files/macos/.zshenv|~/.zshenv|replace
 ```
 
 **File:** `manifests/work-macos.csv`
 ```
 [2|TIMESTAMP|SCRIPT|SOURCE|TARGET|MERGE_STRATEGY]
-2025-12-22T14:05:00.000Z|dotfailes.sh|files/work/.gitconfig|~/.gitconfig|merge
-2025-12-22T14:05:01.000Z|dotfailes.sh|files/work/.ssh/config|~/.ssh/config|merge
+2025-12-22T14:05:00.000Z|dots.sh|files/work/.gitconfig|~/.gitconfig|merge
+2025-12-22T14:05:01.000Z|dots.sh|files/work/.ssh/config|~/.ssh/config|merge
 ```
 
 ### Inheritance Model
@@ -370,7 +370,7 @@ done
 ```
 
 ### Pros
-- ✅ CSV-native: consistent with existing dotfailes logging
+- ✅ CSV-native: consistent with existing dots logging
 - ✅ No new tools: pure bash + CSV parsing (no jq, YAML, JSON)
 - ✅ Hierarchical: inheritance reduces duplication
 - ✅ Flexible naming: clear semantic naming conventions
@@ -417,7 +417,7 @@ done
 
 ### Next Steps
 1. Design manifest.csv format in detail (file paths, merge strategies)
-2. Implement `dotfailes init --parent <parent_setup>` for inheritance
+2. Implement `dots init --parent <parent_setup>` for inheritance
 3. Implement manifest validation (circular dependency detection)
 4. Update install.sh to support setup inheritance
 5. Create example manifests for common environments
