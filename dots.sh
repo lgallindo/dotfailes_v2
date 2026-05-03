@@ -254,43 +254,69 @@ cmd_clone() {
     echo ""
 }
 
-# List all configured setups
+# List all configured setups with rich metadata
 cmd_list() {
     init_config
     
     local count=$(jq '.setups | length' "$CONFIG_FILE")
     
     if [[ "$count" -eq 0 ]]; then
-        warn "No setups configured yet"
+        warn "No setups configured yet. Use 'dots init' or 'dots clone' to get started."
         return
     fi
     
-    info "Configured setups:"
+    info "Registered Setups Dashboard"
     echo ""
     
-    # Process each setup to show remotes
+    # Process each setup
     jq -c '.setups[]' "$CONFIG_FILE" | while read -r setup; do
         local name=$(echo "$setup" | jq -r '.name')
         local os=$(echo "$setup" | jq -r '.os')
         local folder=$(echo "$setup" | jq -r '.folder')
         local repo=$(echo "$setup" | jq -r '.repo')
+        local branch=$(echo "$setup" | jq -r '.branch // "main"')
         
-        echo -e "  • ${YELLOW}${name}${NC}"
-        echo -e "    OS:     $os"
-        echo -e "    Folder: $folder"
-        echo -e "    Repo:   $repo"
+        # UI Borders
+        echo -e "${BLUE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+        printf "${BLUE}║${NC}  ${GREEN}%-74s${NC}  ${BLUE}║${NC}\n" "SETUP: $name"
+        echo -e "${BLUE}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
         
-        # Try to get remotes from git
-        if [[ -d "$repo" ]]; then
-            local remotes=$(git --git-dir="$repo" remote -v 2>/dev/null | awk '{print "    Remote: " $1 " (" $2 ")"}' | sort -u)
-            if [[ -n "$remotes" ]]; then
-                echo "$remotes"
-            else
-                echo -e "    Remote: ${RED}None${NC}"
-            fi
-        else
-            echo -e "    Remote: ${RED}Repo directory missing${NC}"
+        # Environment Info
+        printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "OS Family:" "$os"
+        
+        # Try to get live metadata if it's the current machine
+        local current_os=$(get_os)
+        if [[ "$current_os" == *"$os"* ]] || [[ "$os" == *"$current_os"* ]]; then
+            local meta=$(get_env_metadata)
+            local distro=$(echo -e "$meta" | grep "OS_Distro" | cut -d':' -f2- | xargs)
+            local kernel=$(echo -e "$meta" | grep "Kernel" | cut -d':' -f2- | xargs)
+            local cpu=$(echo -e "$meta" | grep "CPU" | cut -d':' -f2- | xargs | cut -c1-58)
+            local gpu=$(echo -e "$meta" | grep "GPU" | cut -d':' -f2- | xargs | cut -c1-58)
+            
+            printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "Distro:" "$distro"
+            printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "Kernel:" "$kernel"
+            printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "CPU:" "$cpu"
+            [[ "$gpu" != "Unknown" ]] && printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "GPU:" "$gpu"
         fi
+        
+        echo -e "${BLUE}╟──────────────────────────────────────────────────────────────────────────────╢${NC}"
+        
+        # Git Info
+        printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "Work Tree:" "$folder"
+        printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "Repo Path:" "$repo"
+        printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "Branch:" "$branch"
+        
+        # Remotes
+        if [[ -d "$repo" ]]; then
+            local remotes=$(git --git-dir="$repo" remote -v 2>/dev/null | awk '{print $1 " (" $2 ")"}' | sort -u)
+            if [[ -n "$remotes" ]]; then
+                while read -r remote_line; do
+                    printf "${BLUE}║${NC}  ${YELLOW}%-15s${NC} %-58s ${BLUE}║${NC}\n" "Remote:" "$remote_line"
+                done <<< "$remotes"
+            fi
+        fi
+        
+        echo -e "${BLUE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
     done
 }

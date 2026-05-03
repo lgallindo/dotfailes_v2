@@ -13,11 +13,9 @@ NC='\033[0m'
 
 detected_os="$(uname -s)"
 detected_hostname="$(hostname)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="dots.sh"
-echo detected_os: "$detected_os"
-echo detected_hostname: "$detected_hostname"
-echo TERM_PROGRAM: "$TERM_PROGRAM"
-echo SCRIPT: "$SCRIPT"
+DOTS_BIN="${SCRIPT_DIR}/${SCRIPT}"
 
 # Detect user - cross-platform safe approach
 if [[ -z "$USER" ]]; then
@@ -133,7 +131,9 @@ append_config() {
         "$timestamp" "$SCRIPT_NAME" "$USER" "$PWD" "$CALL_ARGS" "$SCRIPT_VERSION" "$key" "$value" >> "./logs/config.log"
     
     CONFIG_ROW_COUNT=$((CONFIG_ROW_COUNT + 1))
-    info "[${timestamp}] Logged: $key=$value"
+    if [[ $(type -t info) == "function" ]]; then
+        info "[${timestamp}] Logged: $key=$value"
+    fi || true
 }
 
 # Append rollback instruction (action with revert command)
@@ -164,8 +164,18 @@ append_rollback() {
 
 # Update log file headers with row count
 update_log_headers() {
-    # Cleanup function - no row count logging
-    return
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    if [[ -f "./logs/config.log" ]]; then
+        # Check if summary already exists
+        if ! tail -n 1 "./logs/config.log" | grep -q "# TOTAL_ROWS:"; then
+            printf '# TOTAL_ROWS: %d | LAST_UPDATE: %s\n' "$CONFIG_ROW_COUNT" "$timestamp" >> "./logs/config.log"
+        fi
+    fi
+    if [[ -f "./logs/rollback.log" ]]; then
+        if ! tail -n 1 "./logs/rollback.log" | grep -q "# TOTAL_ROWS:"; then
+            printf '# TOTAL_ROWS: %d | LAST_UPDATE: %s\n' "$ROLLBACK_ROW_COUNT" "$timestamp" >> "./logs/rollback.log"
+        fi
+    fi
 }
 
 # Register cleanup on exit
@@ -393,7 +403,7 @@ main() {
             info "Repository path: $REPO_PATH"
             info "Config file: $HOME/.dotfailes/config.json"
             info "Initializing repository (non-interactive mode)..."
-            ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
+            "$DOTS_BIN" init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             # Alias
             if [[ -z "$NO_ALIAS" ]]; then
                 ALIAS_COMMENT="# dots alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
@@ -426,9 +436,9 @@ main() {
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
             fi
             # Register repository if remote URL provided
-            if [[ -n "$REPO_URL" ]] && command -v ./dots.sh &> /dev/null; then
+            if [[ -n "$REPO_URL" ]] && [[ -x "$DOTS_BIN" ]]; then
                 info "Registering remote in setup registry..."
-                ./dots.sh remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
+                "$DOTS_BIN" remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
                 append_config "REMOTE_REGISTERED" "origin=$REPO_URL"
             fi
             
@@ -468,7 +478,7 @@ main() {
             # Initialize repository
             echo ""
             info "Initializing repository..."
-            ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
+            "$DOTS_BIN" init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             echo ""
             # Log config file location
             CONFIG_FILE="$HOME/.dotfailes/config.json"
@@ -511,9 +521,9 @@ main() {
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
                 
                 # Register repository if dots.sh is available
-                if command -v ./dots.sh &> /dev/null; then
+                if [[ -x "$DOTS_BIN" ]]; then
                     info "Registering remote in setup registry..."
-                    ./dots.sh remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
+                    "$DOTS_BIN" remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
                     append_config "REMOTE_REGISTERED" "origin=$REPO_URL"
                 fi
             fi
@@ -530,7 +540,7 @@ main() {
         else
             echo ""
             info "You can manually initialize your repository later with:"
-            echo "  ./$SCRIPT init <repo_path> <setup_name> <dotfiles_folder>"
+            echo "  $DOTS_BIN init <repo_path> <setup_name> <dotfiles_folder>"
             echo ""
             info "Or run this installation script again."
             echo ""
