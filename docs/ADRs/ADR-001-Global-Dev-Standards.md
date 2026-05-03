@@ -17,7 +17,11 @@ To ensure consistency across all projects managed by Antigravity, we need rigid 
 - Valid scopes must be formally defined in the project's documentation.
 - Scopes must have rigid boundaries to prevent overlap and ambiguity.
 
-### 3. Commit Format
+### 3. Integration Cadence
+- All agents and developers must follow the cadence: **"Commit early, push early, fetch often."**
+- This ensures minimal drift between local and remote states and reduces merge complexity.
+
+### 4. Commit Format
 All commits must follow the full structure:
 ```text
 <type>(<scope>): <subject>
