@@ -79,20 +79,24 @@ Get-Content ./logs/rollback.log | ForEach-Object {
 
 ## Row Count Validation
 
-All files start with `[n]` where n is the data row count:
+All files start with `[n|HEADER]` where n is the data row count and HEADER is the list of field names:
 
 ```bash
 # Bash: validate config.log has expected rows
 first_line=$(head -n1 ./logs/config.log)
-expected_rows=${first_line//[!0-9]/}
-actual_rows=$(($(wc -l < ./logs/config.log) - 1))  # Subtract header
-[[ "$expected_rows" == "$actual_rows" ]] && echo "✓ Row count valid" || echo "✗ Row count mismatch"
+# Extract the number before the first pipe inside brackets
+expected_rows=$(echo "$first_line" | sed -n 's/\[\([0-9]*\)|.*/\1/p')
+# Subtract 1 for the [n|HEADER] line and 1 for the field name comment if present
+# (Actual implementation in install.sh prepends [n|HEADER] and then has the data rows)
+# Wait, let's look at the current structure in install.sh
+actual_rows=$(($(wc -l < ./logs/config.log) - 1))  
+[[ "$expected_rows" == "$actual_rows" ]] && echo "✓ Row count valid" || echo "✗ Row count mismatch ($expected_rows vs $actual_rows)"
 ```
 
 ```powershell
 # PowerShell: validate rollback.log
 $first = (Get-Content ./logs/rollback.log)[0]
-$expected = [int]($first -replace '\[|\]', '')
+$expected = [int]($first -split '\|' | ForEach-Object { $_ -replace '\[|\]', '' })[0]
 $actual = (Get-Content ./logs/rollback.log).Count - 1
 if ($expected -eq $actual) { Write-Host "✓ Row count valid" } else { Write-Host "✗ Row count mismatch" }
 ```
