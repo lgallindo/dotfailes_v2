@@ -29,31 +29,31 @@ info() {
     echo -e "${BLUE}[$(_get_timestamp)][INFO]${NC} $1"
 }
 
-# Resolve setup name with defaults
+# Resolve setup name with defaults.
+# This function centralizes the selection of the target environment.
+# Logic:
+# 1. Use SELECTED_SETUP if provided via --setup or --branch global flags.
+# 2. Fall back to the first setup defined in config.json (the "default" setup).
+# 3. Die if no setups are configured.
 _resolve_setup_name() {
-    local name="$1"
-    
-    # If explicitly '--' or empty, use SELECTED_SETUP or first setup
-    if [[ -z "$name" ]] || [[ "$name" == "--" ]]; then
-        if [[ -n "$SELECTED_SETUP" ]]; then
-            echo "$SELECTED_SETUP"
-        else
-            init_config
-            local default_setup=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-            if [[ -z "$default_setup" ]]; then
-                die "No setups configured yet. Use 'dots init' or 'dots clone' first."
-            fi
-            echo "$default_setup"
+    if [[ -n "$SELECTED_SETUP" ]]; then
+        echo "$SELECTED_SETUP"
+    else
+        init_config
+        local default_setup=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+        if [[ -z "$default_setup" ]]; then
+            die "No setups configured yet. Use 'dots init' or 'dots clone' first to create a default setup."
         fi
-        return
+        echo "$default_setup"
     fi
-    
-    echo "$name"
 }
 
-# Run git command for a setup
+# Internal helper to execute git commands within a setup's context.
+# Arguments:
+#   $1: Resolved setup name.
+#   $@: Git command and its arguments.
 _git_run() {
-    local setup_name=$(_resolve_setup_name "$1")
+    local setup_name="$1"
     shift
     local command="$1"
     shift
@@ -62,16 +62,17 @@ _git_run() {
     
     local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
     if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
-        die "Setup '$setup_name' not found in configuration."
+        die "Setup '$setup_name' not found in configuration. Check your ~/.dotfailes/config.json or use 'dots list'."
     fi
 
     local repo_path=$(echo "$setup_json" | jq -r '.repo')
     local work_tree=$(echo "$setup_json" | jq -r '.folder')
 
     if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
-        die "Setup '$setup_name' has no repository path."
+        die "Setup '$setup_name' has no repository path configured."
     fi
 
+    # Execute git with specific dir and work-tree
     git --git-dir="$repo_path" --work-tree="$work_tree" "$command" "$@"
 }
 
@@ -338,16 +339,19 @@ cmd_list() {
     done
 }
 
-# List bash-related files for a setup
+# List bash-related files for the selected setup.
+# Scans the HEAD of the repository for files starting with '.bash'.
 cmd_bash_list() {
-    _git_run "" ls-tree -r --name-only HEAD | grep -E "^\.bash" | while read -r item; do
+    local setup_name=$(_resolve_setup_name)
+    _git_run "$setup_name" ls-tree -r --name-only HEAD | grep -E "^\.bash" | while read -r item; do
         echo -e "  • ${YELLOW}$item${NC}"
     done
 }
 
-# Show detailed information about a specific setup
+# Show detailed information about the selected setup.
+# Displays OS metadata, local/remote branch status, and tracking information.
 cmd_setup_show() {
-    local setup_name=$(_resolve_setup_name "$1")
+    local setup_name=$(_resolve_setup_name)
     
     init_config
     
@@ -423,19 +427,12 @@ cmd_setup_show() {
     echo ""
 }
 
-# Initialize bash files from remote for a setup
+# Initialize bash files from remote for the selected setup.
+# This will back up existing files to ~/.dotfailes-backups/ before overwriting.
 cmd_bash_init() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name)
 
     init_config
-
-    if [[ -z "$setup_name" ]]; then
-        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-    fi
-
-    if [[ -z "$setup_name" ]]; then
-        die "No setups configured yet"
-    fi
 
     local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
     local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
@@ -501,19 +498,12 @@ cmd_bash_init() {
     success "Bash files initialized in $work_tree"
 }
 
-# Reload bash files from remote for a setup (no backups)
+# Reload bash files from remote for the selected setup (no backups).
+# Warning: This will overwrite local changes to bash files without backing them up.
 cmd_bash_reload() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name)
 
     init_config
-
-    if [[ -z "$setup_name" ]]; then
-        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-    fi
-
-    if [[ -z "$setup_name" ]]; then
-        die "No setups configured yet"
-    fi
 
     local repo_path
     local work_tree
@@ -562,14 +552,15 @@ cmd_bash_reload() {
     success "Bash files reloaded in $work_tree"
 }
 
-# Add remote to a setup
+# Add a remote to the selected setup.
+# Usage: dots add-remote <remote_name> <remote_url>
 cmd_add_remote() {
-    local setup_name="$1"
-    local remote_name="$2"
-    local remote_url="$3"
+    local setup_name=$(_resolve_setup_name)
+    local remote_name="$1"
+    local remote_url="$2"
     
-    if [[ -z "$setup_name" ]] || [[ -z "$remote_name" ]] || [[ -z "$remote_url" ]]; then
-        die "Usage: $0 add-remote <setup_name> <remote_name> <remote_url>"
+    if [[ -z "$remote_name" ]] || [[ -z "$remote_url" ]]; then
+        die "Usage: $0 add-remote <remote_name> <remote_url>"
     fi
     
     init_config
@@ -588,9 +579,9 @@ cmd_add_remote() {
     success "Remote '$remote_name' added to setup '$setup_name'"
 }
 
-# List remotes for a setup
+# List remotes for the selected setup.
 cmd_list_remotes() {
-    local setup_name=$(_resolve_setup_name "$1")
+    local setup_name=$(_resolve_setup_name)
     
     init_config
     
@@ -621,14 +612,14 @@ cmd_registry_list() {
     jq -r '(.remotes_registry // [])[] | "  • \(.name)\n    URL: \(.url)\n    Description: \(.description // \"N/A\")\n"' "$CONFIG_FILE"
 }
 
-# Use a registered repository for a setup's remote
+# Use a registered repository for the selected setup's remote.
+# Usage: dots registry:use <registry_name> [remote_name]
 cmd_registry_use() {
     local registry_name="$1"
-    local setup_name="$2"
-    local remote_name="${3:-origin}"
+    local remote_name="${2:-origin}"
 
     if [[ -z "$registry_name" ]]; then
-        die "Usage: $0 registry:use <registry_name> [setup_name] [remote_name]"
+        die "Usage: $0 registry:use <registry_name> [remote_name]"
     fi
 
     init_config
@@ -640,17 +631,7 @@ cmd_registry_use() {
         die "Registry entry '$registry_name' not found"
     fi
 
-    if [[ -z "$setup_name" ]]; then
-        local count
-        count=$(jq '.setups | length' "$CONFIG_FILE")
-        if [[ "$count" -eq 0 ]]; then
-            die "No setups configured yet"
-        elif [[ "$count" -eq 1 ]]; then
-            setup_name=$(jq -r '.setups[0].name' "$CONFIG_FILE")
-        else
-            die "Usage: $0 registry:use <registry_name> <setup_name> [remote_name]"
-        fi
-    fi
+    local setup_name=$(_resolve_setup_name)
 
     local repo_path
     repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
@@ -679,13 +660,14 @@ cmd_registry_use() {
     success "Registry '$registry_name' applied to setup '$setup_name' (remote: $remote_name)"
 }
 
-# Remove remote from a setup
+# Remove a remote from the selected setup.
+# Usage: dots remove-remote <remote_name>
 cmd_remove_remote() {
-    local setup_name="$1"
-    local remote_name="$2"
+    local setup_name=$(_resolve_setup_name)
+    local remote_name="$1"
     
-    if [[ -z "$setup_name" ]] || [[ -z "$remote_name" ]]; then
-        die "Usage: $0 remove-remote <setup_name> <remote_name>"
+    if [[ -z "$remote_name" ]]; then
+        die "Usage: $0 remove-remote <remote_name>"
     fi
     
     init_config
@@ -700,10 +682,11 @@ cmd_remove_remote() {
     success "Remote '$remote_name' removed from setup '$setup_name'"
 }
 
-# Ensure setup branch exists and is pushed to remote
+# Ensure the setup's branch exists and is pushed to a remote.
+# Usage: dots branch-ensure [remote_name]
 cmd_branch_ensure() {
-    local setup_name=$(_resolve_setup_name "$1")
-    local remote_name="${2:-origin}"
+    local setup_name=$(_resolve_setup_name)
+    local remote_name="${1:-origin}"
 
     init_config
     
@@ -749,11 +732,12 @@ cmd_branch_ensure() {
     success "Branch '$setup_branch' is set for setup '$setup_name' on $remote_name"
 }
 
-# Sync with remote (push and pull)
+# Sync the selected setup with its remote (performs both pull and push).
+# Usage: dots sync [remote_name] [branch_override]
 cmd_sync() {
-    local setup_name=$(_resolve_setup_name "$1")
-    local remote_name="${2:-origin}"
-    local branch_override="$3"
+    local setup_name=$(_resolve_setup_name)
+    local remote_name="${1:-origin}"
+    local branch_override="$2"
     
     init_config
     
@@ -788,9 +772,10 @@ cmd_sync() {
     success "Sync completed"
 }
 
-# Show status for a setup
+# Show the git status for the selected setup.
+# Provides a summary of changed, untracked, and staged files within the work-tree.
 cmd_status() {
-    local setup_name=$(_resolve_setup_name "$1")
+    local setup_name=$(_resolve_setup_name)
     
     init_config
     
@@ -803,17 +788,17 @@ cmd_status() {
     _git_run "$setup_name" status
 }
 
-# Add files for a setup
+# Add files to the selected setup's repository.
+# Proxies arguments directly to 'git add'.
 cmd_add() {
-    local setup_name=$(_resolve_setup_name "$1")
-    shift
+    local setup_name=$(_resolve_setup_name)
     _git_run "$setup_name" add "$@"
 }
 
-# Commit changes for a setup with automated rich messages
+# Commit changes for the selected setup with automated rich metadata.
+# Captures environment info (OS, CPU, GPU) and adds it to the commit footer.
 cmd_commit() {
-    local setup_name=$(_resolve_setup_name "$1")
-    shift
+    local setup_name=$(_resolve_setup_name)
     
     init_config
     
@@ -885,33 +870,34 @@ cmd_commit() {
     git --git-dir="$repo_path" --work-tree="$work_tree" commit -m "$(echo -e "$commit_msg")"
 }
 
-# Push changes for a setup
+# Push changes for the selected setup.
+# Proxies arguments directly to 'git push'.
 cmd_push() {
-    local setup_name=$(_resolve_setup_name "$1")
-    shift
+    local setup_name=$(_resolve_setup_name)
     _git_run "$setup_name" push "$@"
 }
 
-# Pull changes for a setup
+# Pull changes for the selected setup.
+# Proxies arguments directly to 'git pull'.
 cmd_pull() {
-    local setup_name=$(_resolve_setup_name "$1")
-    shift
+    local setup_name=$(_resolve_setup_name)
     _git_run "$setup_name" pull "$@"
 }
 
-# Show diff for a setup
+# Show differences for the selected setup.
+# Proxies arguments directly to 'git diff'.
 cmd_diff() {
-    local setup_name=$(_resolve_setup_name "$1")
-    shift
+    local setup_name=$(_resolve_setup_name)
     _git_run "$setup_name" diff "$@"
 }
 
-# Merge branch into target branch
+# Merge a branch into a target branch for the selected setup.
+# Usage: dots merge [source_branch] [target_branch] [remote_name]
 cmd_merge() {
-    local setup_name=$(_resolve_setup_name "$1")
-    local source_branch="${2:-}"
-    local target_branch="${3:-main}"
-    local remote_name="${4:-origin}"
+    local setup_name=$(_resolve_setup_name)
+    local source_branch="${1:-}"
+    local target_branch="${2:-main}"
+    local remote_name="${3:-origin}"
 
     init_config
     
@@ -965,17 +951,13 @@ cmd_merge() {
     fi
 }
 
-# Ensure current setup has a remote branch
+# Ensure the selected setup has a remote tracking branch.
+# Usage: dots ensure-remote-branch [remote_name]
 cmd_ensure_remote_branch() {
-    local setup_name="$1"
-    local remote_name="${2:-origin}"
+    local setup_name=$(_resolve_setup_name)
+    local remote_name="${1:-origin}"
     
     init_config
-    
-    # If no setup_name provided, use the first setup
-    if [[ -z "$setup_name" ]]; then
-        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-    fi
     
     if [[ -z "$setup_name" ]]; then
         die "No setups configured yet"
@@ -1064,106 +1046,89 @@ COMMANDS:
     list
         List all configured setups
 
-    setup:show <setup_name>
-        Show detailed information about a specific setup
-        Displays OS, work tree, repository, branch, remote tracking status
+    setup:show
+        Show detailed information about the selected setup
 
-    bash:list [setup_name]
-        List bash-related files for a setup
+    bash:list
+        List bash-related files for the selected setup
 
-    bash:init [setup_name]
-        Initialize bash files from remote for a setup
+    bash:init
+        Initialize bash files from remote for the selected setup
+        Backs up existing files to ~/.dotfailes-backups/
 
-    bash:reload [setup_name]
+    bash:reload
         Reload bash files from remote for a setup (no backups)
         
-    add-remote <setup_name> <remote_name> <remote_url>
-        Add a remote to a setup
+    add-remote <remote_name> <remote_url>
+        Add a remote to the selected setup
         
-    list-remotes <setup_name>
-        List remotes for a setup
+    list-remotes
+        List remotes for the selected setup
         
-    remove-remote <setup_name> <remote_name>
-        Remove a remote from a setup
+    remove-remote <remote_name>
+        Remove a remote from the selected setup
 
     registry:list
         List registered dotfiles repositories
 
-    registry:use <registry_name> [setup_name] [remote_name]
-        Use a registered repository for a setup's remote
+    registry:use <registry_name> [remote_name]
+        Use a registered repository for the selected setup's remote
 
-    branch-ensure <setup_name> [remote_name]
+    branch-ensure [remote_name]
         Ensure setup branch exists and is pushed to remote
         
-    ensure-remote-branch [setup_name] [remote_name]
-        Ensure current (or specified) setup has a remote branch
+    ensure-remote-branch [remote_name]
+        Ensure selected setup has a remote branch
         
-    merge <setup_name> [source_branch] [target_branch] [remote_name]
+    merge [source_branch] [target_branch] [remote_name]
         Merge source branch into target branch (default: setup branch → main)
         Source branch is kept intact after merge
         
-    sync [setup_name] [remote_name] [branch]
-        Sync with remote (pull and push)
-        Default remote: origin, Default branch: setup branch
-        If setup_name is omitted or '--', use default setup.
+    sync [remote_name] [branch]
+        Sync the selected setup with remote (pull and push)
         
-    status [setup_name]
-        Show git status for a setup
-        If setup_name is omitted or '--', use default setup.
+    status
+        Show git status for the selected setup
         
-    add [setup_name] [git_args]
+    add [git_args]
         Add files to tracking (proxies to git add)
-        Use '--' as setup_name to use the default setup.
         
-    commit [setup_name] [git_args]
-        Commit changes (proxies to git commit)
-        Use '--' as setup_name to use the default setup.
+    commit [git_args]
+        Commit changes with rich metadata (proxies to git commit)
         
-    push [setup_name] [git_args]
+    push [git_args]
         Push changes (proxies to git push)
-        Use '--' as setup_name to use the default setup.
         
-    pull [setup_name] [git_args]
+    pull [git_args]
         Pull changes (proxies to git pull)
-        Use '--' as setup_name to use the default setup.
         
-    diff [setup_name] [git_args]
+    diff [git_args]
         Show differences (proxies to git diff)
-        Use '--' as setup_name to use the default setup.
         
     help
         Show this help message
+
+OPTIONS:
+    --setup <name>
+        Specify which setup to use for the command.
+        Defaults to the first setup in ~/.dotfailes/config.json.
 
 EXAMPLES:
     # Initialize new dotfile repository
     $0 init ~/.dotfiles my-laptop ~/
     
-    # Clone existing dotfile repository
-    $0 clone https://github.com/user/dotfiles.git ~/.dotfiles
-    
-    # Add a remote
-    $0 add-remote my-laptop origin https://github.com/user/dotfiles.git
-    
-    # Sync with remote
-    $0 sync my-laptop origin main
+    # Check status of default setup
+    $0 status
 
-    # Initialize bash files from remote
-    $0 bash:init my-laptop
+    # Check status of specific setup
+    $0 --setup my-laptop status
 
-    # Ensure branch exists on remote
-    $0 branch-ensure my-laptop origin
-    
-    # Ensure current setup has remote branch
-    $0 ensure-remote-branch
-    
-    # Or ensure specific setup has remote branch  
-    $0 ensure-remote-branch my-laptop origin
-    
-    # Merge setup branch into main (source branch is kept intact)
-    $0 merge my-laptop TJPE293796-Windows main
-    
-    # Check status
-    $0 status my-laptop
+    # Add and commit files to default setup
+    $0 add .bashrc
+    $0 commit -m "Update bashrc"
+
+    # Sync specific setup
+    $0 --setup my-laptop sync origin main
 
 CONFIGURATION:
     Configuration is stored in: $CONFIG_FILE
