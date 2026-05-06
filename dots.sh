@@ -25,24 +25,37 @@ info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
+# Resolve setup name with defaults
+_resolve_setup_name() {
+    local name="$1"
+    
+    # If explicitly '--' or empty, use SELECTED_SETUP or first setup
+    if [[ -z "$name" ]] || [[ "$name" == "--" ]]; then
+        if [[ -n "$SELECTED_SETUP" ]]; then
+            echo "$SELECTED_SETUP"
+        else
+            init_config
+            local default_setup=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+            if [[ -z "$default_setup" ]]; then
+                die "No setups configured yet. Use 'dots init' or 'dots clone' first."
+            fi
+            echo "$default_setup"
+        fi
+        return
+    fi
+    
+    echo "$name"
+}
+
 # Run git command for a setup
 _git_run() {
-    local setup_name="${1:-$SELECTED_SETUP}"
+    local setup_name=$(_resolve_setup_name "$1")
     shift
     local command="$1"
     shift
 
     init_config
     
-    # If no setup specified, use the first one as default
-    if [[ -z "$setup_name" ]]; then
-        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-    fi
-
-    if [[ -z "$setup_name" ]]; then
-        die "No setups configured yet. Use 'dots init' or 'dots clone' first."
-    fi
-
     local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
     if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
         die "Setup '$setup_name' not found in configuration."
@@ -330,21 +343,9 @@ cmd_bash_list() {
 
 # Show detailed information about a specific setup
 cmd_setup_show() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     
     init_config
-    
-    if [[ -z "$setup_name" ]]; then
-        # If no setup name provided, show first setup or prompt
-        local count=$(jq '.setups | length' "$CONFIG_FILE")
-        if [[ "$count" -eq 0 ]]; then
-            die "No setups configured yet"
-        elif [[ "$count" -eq 1 ]]; then
-            setup_name=$(jq -r '.setups[0].name' "$CONFIG_FILE")
-        else
-            die "Usage: $0 setup:show <setup_name>"
-        fi
-    fi
     
     # Fetch setup configuration
     local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
@@ -585,11 +586,7 @@ cmd_add_remote() {
 
 # List remotes for a setup
 cmd_list_remotes() {
-    local setup_name="$1"
-    
-    if [[ -z "$setup_name" ]]; then
-        die "Usage: $0 list-remotes <setup_name>"
-    fi
+    local setup_name=$(_resolve_setup_name "$1")
     
     init_config
     
@@ -701,15 +698,11 @@ cmd_remove_remote() {
 
 # Ensure setup branch exists and is pushed to remote
 cmd_branch_ensure() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     local remote_name="${2:-origin}"
 
-    if [[ -z "$setup_name" ]]; then
-        die "Usage: $0 branch-ensure <setup_name> [remote_name]"
-    fi
-
     init_config
-
+    
     local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
     local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
     local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
@@ -754,13 +747,9 @@ cmd_branch_ensure() {
 
 # Sync with remote (push and pull)
 cmd_sync() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     local remote_name="${2:-origin}"
     local branch_override="$3"
-    
-    if [[ -z "$setup_name" ]]; then
-        die "Usage: $0 sync <setup_name> [remote_name] [branch]"
-    fi
     
     init_config
     
@@ -797,19 +786,13 @@ cmd_sync() {
 
 # Show status for a setup
 cmd_status() {
-    local setup_name="$1"
-    
-    if [[ -z "$setup_name" ]]; then
-        die "Usage: $0 status <setup_name>"
-    fi
+    local setup_name=$(_resolve_setup_name "$1")
     
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
-        die "Setup '$setup_name' not found"
+    local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
+    if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
+        die "Setup '$setup_name' not found in configuration."
     fi
     
     info "Status for setup '$setup_name':"
@@ -818,20 +801,17 @@ cmd_status() {
 
 # Add files for a setup
 cmd_add() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     shift
     _git_run "$setup_name" add "$@"
 }
 
 # Commit changes for a setup with automated rich messages
 cmd_commit() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     shift
     
     init_config
-    if [[ -z "$setup_name" ]] || [[ "$setup_name" == "--" ]]; then
-        setup_name=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
-    fi
     
     local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
     local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
@@ -903,38 +883,34 @@ cmd_commit() {
 
 # Push changes for a setup
 cmd_push() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     shift
     _git_run "$setup_name" push "$@"
 }
 
 # Pull changes for a setup
 cmd_pull() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     shift
     _git_run "$setup_name" pull "$@"
 }
 
 # Show diff for a setup
 cmd_diff() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     shift
     _git_run "$setup_name" diff "$@"
 }
 
 # Merge branch into target branch
 cmd_merge() {
-    local setup_name="$1"
+    local setup_name=$(_resolve_setup_name "$1")
     local source_branch="${2:-}"
     local target_branch="${3:-main}"
     local remote_name="${4:-origin}"
 
-    if [[ -z "$setup_name" ]]; then
-        die "Usage: $0 merge <setup_name> [source_branch] [target_branch] [remote_name]"
-    fi
-
     init_config
-
+    
     local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
     local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
     local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
@@ -1122,28 +1098,34 @@ COMMANDS:
         Merge source branch into target branch (default: setup branch → main)
         Source branch is kept intact after merge
         
-    sync <setup_name> [remote_name] [branch]
+    sync [setup_name] [remote_name] [branch]
         Sync with remote (pull and push)
         Default remote: origin, Default branch: setup branch
+        If setup_name is omitted or '--', use default setup.
         
-    status <setup_name>
+    status [setup_name]
         Show git status for a setup
+        If setup_name is omitted or '--', use default setup.
         
-    add <setup_name> [git_args]
+    add [setup_name] [git_args]
         Add files to tracking (proxies to git add)
         Use '--' as setup_name to use the default setup.
         
-    commit <setup_name> [git_args]
+    commit [setup_name] [git_args]
         Commit changes (proxies to git commit)
+        Use '--' as setup_name to use the default setup.
         
-    push <setup_name> [git_args]
+    push [setup_name] [git_args]
         Push changes (proxies to git push)
+        Use '--' as setup_name to use the default setup.
         
-    pull <setup_name> [git_args]
+    pull [setup_name] [git_args]
         Pull changes (proxies to git pull)
+        Use '--' as setup_name to use the default setup.
         
-    diff <setup_name> [git_args]
+    diff [setup_name] [git_args]
         Show differences (proxies to git diff)
+        Use '--' as setup_name to use the default setup.
         
     help
         Show this help message
