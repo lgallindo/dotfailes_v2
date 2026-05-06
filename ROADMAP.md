@@ -1,4 +1,4 @@
-# dotfailes_v2 Roadmap & Implementation Plans
+# dots_v2 Roadmap & Implementation Plans
 
 ## Table of Contents
 1. [Current Status](#current-status)
@@ -32,8 +32,8 @@
 
 ## Near-Term Plans (Priority 1)
 
-### 1. Handle dotfailes init Return & Rollback
-**Goal:** Gracefully handle failures during `dotfailes.sh init` and provide rollback capability.
+### 1. Handle dots init Return & Rollback
+**Goal:** Gracefully handle failures during `dots.sh init` and provide rollback capability.
 
 **Implementation:**
 ```bash
@@ -55,7 +55,7 @@ fi
 
 **Files affected:**
 - `install.sh` - enhanced error handling
-- `dotfailes.sh` - error reporting
+- `dots.sh` - error reporting
 - `rollback.log` - initialization failures tracked
 
 ---
@@ -93,7 +93,7 @@ update_log_headers() {
 
 ## Medium-Term Plans (Priority 2)
 
-### 3. Remove dotfailes.sh JSON Dependency
+### 3. Remove dots.sh JSON Dependency
 **Goal:** Replace `~/.dotfailes/config.json` with pipe-delimited CSV format.
 
 **Motivation:**
@@ -107,11 +107,11 @@ update_log_headers() {
 **Format:**
 ```
 [n|TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|SETUP_NAME|SETUP_OS|SETUP_FOLDER|SETUP_REPO]
-2025-12-22T14:00:00.000Z|dotfailes.sh|lucas|/home/lucas|dotfailes.sh init|1|my-setup|macOS|/home/lucas|/home/lucas/.dotfiles
+2025-12-22T14:00:00.000Z|dots.sh|lucas|/home/lucas|dots.sh init|1|my-setup|macOS|/home/lucas|/home/lucas/.dotfiles
 ```
 
 **Migration strategy:**
-1. Create migration function in dotfailes.sh
+1. Create migration function in dots.sh
 2. On first run: convert old JSON to new CSV format
 3. Update cmd_init, cmd_clone to write CSV instead of JSON
 4. Update cmd_list, cmd_status to read from CSV
@@ -131,7 +131,7 @@ grep -c '^[0-9]' ~/.dotfailes/config.csv
 ```
 
 **Files affected:**
-- `dotfailes.sh` - all cmd_* functions
+- `dots.sh` - all cmd_* functions
 - `install.sh` - remove jq dependency (or make optional)
 - `PARSEABILITY.md` - add CSV query examples
 
@@ -198,17 +198,17 @@ Current approach treats all setups equally. This doesn't scale when:
 **File:** `~/.dotfailes/config.csv`
 ```
 [3|TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|SETUP_NAME|PARENT_SETUP|OS|OS_VERSION|SHELL|SHELL_VERSION|ENV_TYPE|MANIFEST_PATH]
-2025-12-22T14:00:00.000Z|dotfailes.sh|lucas|/home/lucas|dotfailes.sh init|1|base-macos|NULL|macOS|13.2|zsh|5.9|personal|manifests/base-macos.csv
-2025-12-22T14:05:00.000Z|dotfailes.sh|lucas|/home/lucas|dotfailes.sh init|1|work-macos|base-macos|macOS|13.2|zsh|5.9|work|manifests/work-macos.csv
+2025-12-22T14:00:00.000Z|dots.sh|lucas|/home/lucas|dots.sh init|1|base-macos|NULL|macOS|13.2|zsh|5.9|personal|manifests/base-macos.csv
+2025-12-22T14:05:00.000Z|dots.sh|lucas|/home/lucas|dots.sh init|1|work-macos|base-macos|macOS|13.2|zsh|5.9|work|manifests/work-macos.csv
 ```
 
 #### Manifest CSV Format
 **File:** `manifests/base-macos.csv`
 ```
 [4|TIMESTAMP|SCRIPT|SOURCE|TARGET|MERGE_STRATEGY]
-2025-12-22T14:00:00.000Z|dotfailes.sh|files/common/.gitconfig|~/.gitconfig|replace
-2025-12-22T14:00:01.000Z|dotfailes.sh|files/macos/.zshrc|~/.zshrc|merge
-2025-12-22T14:00:02.000Z|dotfailes.sh|files/shell/zsh/|~/.zsh.d/|copy_dir
+2025-12-22T14:00:00.000Z|dots.sh|files/common/.gitconfig|~/.gitconfig|replace
+2025-12-22T14:00:01.000Z|dots.sh|files/macos/.zshrc|~/.zshrc|merge
+2025-12-22T14:00:02.000Z|dots.sh|files/shell/zsh/|~/.zsh.d/|copy_dir
 ```
 
 #### Inheritance Model
@@ -237,7 +237,7 @@ work-macos (parent: base-macos)
 - `docker-debian-bash-dev` - Docker container setup
 
 #### Pros
-- ✅ CSV-native: consistent with existing dotfailes logging
+- ✅ CSV-native: consistent with existing dots logging
 - ✅ No new tools: pure bash + CSV parsing (no jq, YAML, JSON)
 - ✅ Hierarchical: inheritance reduces duplication
 - ✅ Flexible naming: clear semantic naming conventions
@@ -248,7 +248,7 @@ work-macos (parent: base-macos)
 
 #### Implementation Steps
 1. Design manifest.csv format in detail (file paths, merge strategies)
-2. Implement `dotfailes init --parent <parent_setup>` for inheritance
+2. Implement `dots init --parent <parent_setup>` for inheritance
 3. Implement manifest validation (circular dependency detection)
 4. Update install.sh to support setup inheritance
 5. Create example manifests for common environments
@@ -333,11 +333,11 @@ Users organizing their dotfiles with Stow would structure as:
 │   │   └── .gitignore
 │   └── macos/
 │       └── .zshenv
-└── dotfiles_manifest.csv     # dotfailes manifest
+└── dotfiles_manifest.csv     # dots manifest
 ```
 
 #### 2. Stow Integration Mode
-New flag: `dotfailes init --use-stow`
+New flag: `dots init --use-stow`
 
 When enabled:
 ```bash
@@ -356,9 +356,9 @@ stow -D -t ~ bash
 Support BOTH methods in same setup:
 ```
 [4|TIMESTAMP|SCRIPT|SOURCE|TARGET|MERGE_STRATEGY]
-2025-12-22T14:00:00.000Z|dotfailes.sh|files/common/.gitconfig|~/.gitconfig|copy
-2025-12-22T14:00:01.000Z|dotfailes.sh|stow-packages/bash|~|stow
-2025-12-22T14:00:02.000Z|dotfailes.sh|files/macos/.zshenv|~/.zshenv|copy
+2025-12-22T14:00:00.000Z|dots.sh|files/common/.gitconfig|~/.gitconfig|copy
+2025-12-22T14:00:01.000Z|dots.sh|stow-packages/bash|~|stow
+2025-12-22T14:00:02.000Z|dots.sh|files/macos/.zshenv|~/.zshenv|copy
 ```
 
 #### 4. Prerequisites Checking
@@ -425,14 +425,14 @@ stow -t ~ bash
 
 **Example 2: Multiple packages with dotfailes**
 ```bash
-dotfailes init ~/.dotfiles my-setup ~ --use-stow
+dots init ~/.dotfiles my-setup ~ --use-stow
 # Manifest will stow bash, zsh, common packages
 ```
 
 **Example 3: Selective stowing**
 ```bash
 # Stow only bash, copy other files directly
-dotfailes init ~/.dotfiles my-setup ~ --use-stow --stow-packages bash,zsh
+dots init ~/.dotfiles my-setup ~ --use-stow --stow-packages bash,zsh
 ```
 
 ### Benefits of Integration
@@ -502,12 +502,12 @@ dotfailes init ~/.dotfiles my-setup ~ --use-stow --stow-packages bash,zsh
 ## Release Timeline
 
 ### v0.2.0 (Q1 2026)
-- Handle dotfailes init return codes and rollback
+- Handle dots init return codes and rollback
 - Change row count format to [n|HEADER]
 - Improve error handling and logging
 
 ### v0.5.0 (Q2 2026)
-- Remove JSON dependency from dotfailes.sh
+- Remove JSON dependency from dots.sh
 - Implement multi-setup environment management
 - Add setup inheritance support
 - Create example manifests

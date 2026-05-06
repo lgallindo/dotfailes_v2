@@ -13,7 +13,7 @@ A typical developer uses multiple machines with:
 - **Environment variation**: work laptop, personal desktop, cloud VMs, containers
 - **Version variation**: dotfile versions may need to differ by OS/shell/version
 
-Currently, dotfailes treats all setups equally with a single `~/.dotfailes/config.csv`. This doesn't scale well when:
+Currently, dots treats all setups equally with a single `~/.dotfailes/config.csv`. This doesn't scale well when:
 - `.zshrc` on macOS differs significantly from `.zshrc` on Linux
 - Windows PowerShell profiles differ from Git Bash profiles
 - Work configurations must be isolated from personal ones

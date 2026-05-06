@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains unit and integration tests for the dotfailes installation script using the [BATS (Bash Automated Testing System)](https://github.com/bats-core/bats-core) framework.
+This directory contains unit and integration tests for the dots installation script using the [BATS (Bash Automated Testing System)](https://github.com/bats-core/bats-core) framework.
 
 ## Setup
 

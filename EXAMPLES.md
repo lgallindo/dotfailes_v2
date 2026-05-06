@@ -1,6 +1,6 @@
 # Examples
 
-This document provides practical examples of using dotfailes for various scenarios.
+This document provides practical examples of using dots for various scenarios.
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@ This document provides practical examples of using dotfailes for various scenari
 
 ```bash
 # 1. Initialize your dotfile repository
-./dotfailes.sh init ~/.dotfiles my-laptop ~/
+./dots.sh init ~/.dotfiles my-laptop ~/
 
 # 2. Add the alias to your .bashrc
 echo "alias dotfiles='git --git-dir=\$HOME/.dotfiles --work-tree=\$HOME'" >> ~/.bashrc
@@ -42,7 +42,7 @@ dotfiles push -u origin main
 
 ```zsh
 # 1. Initialize your dotfile repository
-./dotfailes.zsh init ~/.dotfiles my-macbook ~/
+./dots.zsh init ~/.dotfiles my-macbook ~/
 
 # 2. Add the alias to your .zshrc
 echo "alias dotfiles='git --git-dir=\$HOME/.dotfiles --work-tree=\$HOME'" >> ~/.zshrc
@@ -64,7 +64,7 @@ dotfiles commit -m "Initial commit: zsh configuration"
 
 ```powershell
 # 1. Initialize your dotfile repository
-.\dotfailes.ps1 init C:\Users\username\.dotfiles my-windows C:\Users\username
+.\dots.ps1 init C:\Users\username\.dotfiles my-windows C:\Users\username
 
 # 2. Add the function to your PowerShell profile
 # First, create profile if it doesn't exist
@@ -162,7 +162,7 @@ dotfiles commit -m "Add gitignore for sensitive and temporary files"
 
 ```bash
 # 1. Clone your dotfiles
-./dotfailes.sh clone https://github.com/yourusername/dotfiles.git ~/.dotfiles work-desktop ~/
+./dots.sh clone https://github.com/yourusername/dotfiles.git ~/.dotfiles work-desktop ~/
 
 # 2. Add alias to shell config
 echo "alias dotfiles='git --git-dir=\$HOME/.dotfiles --work-tree=\$HOME'" >> ~/.bashrc
@@ -205,11 +205,11 @@ You can manage work and personal dotfiles separately:
 
 ```bash
 # Initialize work setup
-./dotfailes.sh init ~/.dotfiles-work work-setup ~/work
+./dots.sh init ~/.dotfiles-work work-setup ~/work
 echo "alias dotfiles-work='git --git-dir=\$HOME/.dotfiles-work --work-tree=\$HOME/work'" >> ~/.bashrc
 
 # Initialize personal setup
-./dotfailes.sh init ~/.dotfiles-personal personal-setup ~/
+./dots.sh init ~/.dotfiles-personal personal-setup ~/
 echo "alias dotfiles='git --git-dir=\$HOME/.dotfiles-personal --work-tree=\$HOME'" >> ~/.bashrc
 
 # Reload config
@@ -334,7 +334,7 @@ dotfiles commit -m "Add portable development environment setup"
 
 ```bash
 # Create a team-shared configuration
-./dotfailes.sh init ~/.dotfiles-team team-config ~/team-workspace
+./dots.sh init ~/.dotfiles-team team-config ~/team-workspace
 
 # Add team alias
 echo "alias team-dotfiles='git --git-dir=\$HOME/.dotfiles-team --work-tree=\$HOME/team-workspace'" >> ~/.bashrc
@@ -401,7 +401,7 @@ cd ~/dotfiles
 git archive main | tar -x -C /tmp/old-dotfiles
 
 # Initialize new bare repo
-./dotfailes.sh init ~/.dotfiles my-laptop ~/
+./dots.sh init ~/.dotfiles my-laptop ~/
 
 # Add the alias
 echo "alias dotfiles='git --git-dir=\$HOME/.dotfiles --work-tree=\$HOME'" >> ~/.bashrc

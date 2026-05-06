@@ -1,3 +1,29 @@
+# dots_v2
+
+**Version 1.0.0**
+
+### Core Scripts
+
+- [dots.sh](dots.sh): Primary bash script for managing dotfiles using bare git repositories.
+- [install.sh](install.sh): Interactive/non-interactive installation and environment setup script.
+
+### Documentation
+
+- [Documentation Index](docs/README.md): Central hub for project policies and guides.
+
+## Overview
+
+**dots_v2** is a lightweight, cross-platform dotfile management system that uses bare git repositories to track and synchronize your configuration files across multiple machines. It supports Linux, MacOS, and Windows with dedicated scripts for each platform.
+
+## Features
+
+- **Bare Git Repositories**: Manage dotfiles without moving them from their original locations.
+- **Cross-Platform**: Support for Bash, Zsh, and PowerShell.
+- **Interactive Setup**: Simple installation script for quick configuration.
+- **Non-Interactive Mode**: Fully automated installation via CLI flags.
+- **Auditable History**: Rigid commit standards and log tracking.
+- **Rollback System**: Easily revert configuration changes.
+
 ## Logs and Process Documentation
 
 The `install.sh` script automatically logs all configuration changes in the `logs/` directory:
@@ -13,6 +39,7 @@ Each log file includes a header row describing the fields and a footer with tota
 ```
 
 Refer to these logs for installation history, troubleshooting, and rollback procedures. See `INSTALL_WORKFLOW.md` for detailed workflow documentation.
+
 ## Automated Testing
 
 This project uses [bats-core](https://github.com/bats-core/bats-core) for automated testing of bash scripts.

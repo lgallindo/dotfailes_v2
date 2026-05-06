@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installation script for dotfailes
-# This script helps you get started with dotfailes quickly
+# This script helps you get started with dots quickly
 
 set -e
 
@@ -13,11 +13,13 @@ NC='\033[0m'
 
 detected_os="$(uname -s)"
 detected_hostname="$(hostname)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="dots.sh"
 echo detected_os: "$detected_os"
 echo detected_hostname: "$detected_hostname"
 echo TERM_PROGRAM: "$TERM_PROGRAM"
 echo SCRIPT: "$SCRIPT"
+DOTS_BIN="${SCRIPT_DIR}/${SCRIPT}"
 
 # Detect user - cross-platform safe approach
 if [[ -z "$USER" ]]; then
@@ -58,16 +60,24 @@ die() {
     exit 1
 }
 
-# Detect OS
+# Detect OS with WSL support and case-insensitivity
 detect_os() {
-    case "$detected_os" in
-        Linux*)     echo "Linux";;
-        Darwin*)    echo "MacOS";;
-        CYGWIN*)    echo "Windows";;
-        MINGW*)     echo "Windows";;
-        MSYS*)      echo "Windows";;
-        *)          echo "Unknown";;
+    local sys_name=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local os_out=""
+    case "$sys_name" in
+        linux*)   os_out="Linux" ;;
+        darwin*)  os_out="MacOS-Darwin" ;;
+        cygwin*)  os_out="Windows-CYGWIN" ;;
+        mingw*)   os_out="Windows-MINGW" ;;
+        msys*)    os_out="Windows-MSYS" ;;
+        *)        os_out="$(uname -s)" ;;
     esac
+
+    # WSL Detection
+    if grep -qi "microsoft" /proc/version 2>/dev/null || uname -r | grep -qi "microsoft"; then
+        os_out="${os_out}-WSL"
+    fi
+    echo "$os_out"
 }
 
 # Check if jq is installed
@@ -125,7 +135,9 @@ append_config() {
         "$timestamp" "$SCRIPT_NAME" "$USER" "$PWD" "$CALL_ARGS" "$SCRIPT_VERSION" "$key" "$value" >> "./logs/config.log"
     
     CONFIG_ROW_COUNT=$((CONFIG_ROW_COUNT + 1))
-    info "[${timestamp}] Logged: $key=$value"
+    if [[ $(type -t info) == "function" ]]; then
+        info "[${timestamp}] Logged: $key=$value"
+    fi || true
 }
 
 # Append rollback instruction (action with revert command)
@@ -156,8 +168,18 @@ append_rollback() {
 
 # Update log file headers with row count
 update_log_headers() {
-    # Cleanup function - no row count logging
-    return
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    if [[ -f "./logs/config.log" ]]; then
+        # Check if summary already exists
+        if ! tail -n 1 "./logs/config.log" | grep -q "# TOTAL_ROWS:"; then
+            printf '# TOTAL_ROWS: %d | LAST_UPDATE: %s\n' "$CONFIG_ROW_COUNT" "$timestamp" >> "./logs/config.log"
+        fi
+    fi
+    if [[ -f "./logs/rollback.log" ]]; then
+        if ! tail -n 1 "./logs/rollback.log" | grep -q "# TOTAL_ROWS:"; then
+            printf '# TOTAL_ROWS: %d | LAST_UPDATE: %s\n' "$ROLLBACK_ROW_COUNT" "$timestamp" >> "./logs/rollback.log"
+        fi
+    fi
 }
 
 # Register cleanup on exit
@@ -306,6 +328,42 @@ main() {
     append_config "USER" "$USER"
     append_config "USERNAME" "$USERNAME"
     
+    # Detailed Debug Information
+    echo -e "${BLUE}--- ENVIRONMENT DEBUG ---${NC}"
+    
+    local os_distro="Unknown"
+    [[ -f /etc/os-release ]] && os_distro=$(grep PRETTY_NAME /etc/os-release | cut -d'=' -f2 | tr -d '"')
+    echo "OS/Distro: $os_distro"
+    append_config "OS_DISTRO" "$os_distro"
+    
+    local host_model="Unknown"
+    [[ -f /sys/class/dmi/id/product_name ]] && host_model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "Unknown")
+    echo "Host (Model): $host_model"
+    append_config "HOST_MODEL" "$host_model"
+    
+    echo "OS Name: $(uname -o 2>/dev/null || echo "Unknown")"
+    append_config "UNAME_O" "$(uname -o 2>/dev/null || echo "Unknown")"
+    
+    echo "Kernel: $(uname -r 2>/dev/null || echo "Unknown")"
+    append_config "KERNEL" "$(uname -r 2>/dev/null || echo "Unknown")"
+    
+    echo "Shell: $(basename "$SHELL" 2>/dev/null || echo "Unknown")"
+    append_config "SHELL_EXEC" "$(basename "$SHELL" 2>/dev/null || echo "Unknown")"
+    
+    echo "Arch: $(uname -m 2>/dev/null || echo "Unknown")"
+    append_config "UNAME_M" "$(uname -m 2>/dev/null || echo "Unknown")"
+    
+    local cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^[ \t]*//' 2>/dev/null || echo "Unknown")
+    echo "CPU: $cpu_model"
+    append_config "CPU_MODEL" "$cpu_model"
+    
+    local gpu_model="Unknown"
+    command -v lspci &> /dev/null && gpu_model=$(lspci | grep -i vga | cut -d':' -f3 | sed 's/^[ \t]*//' | head -1 2>/dev/null || echo "Unknown")
+    echo "GPU: $gpu_model"
+    append_config "GPU_MODEL" "$gpu_model"
+    
+    echo -e "${BLUE}-------------------------${NC}"
+    echo ""
     # Parse CLI arguments for non-interactive mode
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -349,10 +407,10 @@ main() {
             info "Repository path: $REPO_PATH"
             info "Config file: $HOME/.dotfailes/config.json"
             info "Initializing repository (non-interactive mode)..."
-            ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
+            "$DOTS_BIN" init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             # Alias
             if [[ -z "$NO_ALIAS" ]]; then
-                ALIAS_COMMENT="# dotfailes alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
+                ALIAS_COMMENT="# dots alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
                 ALIAS_CMD="alias dotfiles='git --git-dir=$REPO_PATH --work-tree=$DOTFILES_FOLDER'"
                 BASH_ALIASES="$HOME/.bash_aliases"
                 if [[ -f "$BASH_ALIASES" && -f "$HOME/.bashrc" && $(grep -E "^ *(source|\. +) *~?/.bash_aliases" "$HOME/.bashrc") ]]; then
@@ -382,9 +440,9 @@ main() {
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
             fi
             # Register repository if remote URL provided
-            if [[ -n "$REPO_URL" ]] && command -v ./dots.sh &> /dev/null; then
+            if [[ -n "$REPO_URL" ]] && [[ -x "$DOTS_BIN" ]]; then
                 info "Registering remote in setup registry..."
-                ./dots.sh remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
+                "$DOTS_BIN" remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
                 append_config "REMOTE_REGISTERED" "origin=$REPO_URL"
             fi
             
@@ -424,7 +482,7 @@ main() {
             # Initialize repository
             echo ""
             info "Initializing repository..."
-            ./$SCRIPT init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
+            "$DOTS_BIN" init "$REPO_PATH" "$SETUP_NAME" "$DOTFILES_FOLDER"
             echo ""
             # Log config file location
             CONFIG_FILE="$HOME/.dotfailes/config.json"
@@ -437,7 +495,7 @@ main() {
                     echo "Enter the URL for your dotfiles repo (for comment, optional):"
                     read -r REPO_URL
                 fi
-                ALIAS_COMMENT="# dotfailes alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
+                ALIAS_COMMENT="# dots alias (repo: ${REPO_URL:-https://github.com/lgallindo/dotfailes_v2})"
                 ALIAS_CMD="alias dotfiles='git --git-dir=$REPO_PATH --work-tree=$DOTFILES_FOLDER'"
                 BASH_ALIASES="$HOME/.bash_aliases"
                 if [[ -f "$BASH_ALIASES" && -f "$HOME/.bashrc" && $(grep -E "^ *(source|\. +) *~?/.bash_aliases" "$HOME/.bashrc") ]]; then
@@ -467,9 +525,9 @@ main() {
                 $([[ -n "$GIT_EXECUTABLE" ]] && echo "$GIT_EXECUTABLE" || echo git) --git-dir="$REPO_PATH" --work-tree="$DOTFILES_FOLDER" push --set-upstream origin main 2>/dev/null || true
                 
                 # Register repository if dots.sh is available
-                if command -v ./dots.sh &> /dev/null; then
+                if [[ -x "$DOTS_BIN" ]]; then
                     info "Registering remote in setup registry..."
-                    ./dots.sh remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
+                    "$DOTS_BIN" remote:add "$SETUP_NAME" "origin" "$REPO_URL" 2>/dev/null || warn "Could not auto-register remote"
                     append_config "REMOTE_REGISTERED" "origin=$REPO_URL"
                 fi
             fi
@@ -486,7 +544,7 @@ main() {
         else
             echo ""
             info "You can manually initialize your repository later with:"
-            echo "  ./$SCRIPT init <repo_path> <setup_name> <dotfiles_folder>"
+            echo "  $DOTS_BIN init <repo_path> <setup_name> <dotfiles_folder>"
             echo ""
             info "Or run this installation script again."
             echo ""
