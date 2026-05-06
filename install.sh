@@ -399,7 +399,7 @@ main() {
     # Old CSV functions no longer used - using new pipe-delimited format
     
     # Check prerequisites
-    check_jq
+    # check_jq (No longer mandatory since CSV migration)
     check_git
     
     # Handle rollback mode if requested

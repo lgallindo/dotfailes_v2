@@ -120,3 +120,31 @@ Timeline-building script (bash):
         esac
     done
 ```
+
+## Configuration Queries (config.csv)
+
+The `config.csv` file uses the same pipe-delimited format as the logs.
+
+### List all setups for a specific OS (Bash)
+```bash
+grep '|Linux|' ~/.dotfailes/config.csv | cut -d'|' -f7
+```
+
+### Get repository path for a specific setup (Bash)
+```bash
+grep '|my-setup|' ~/.dotfailes/config.csv | cut -d'|' -f10
+```
+
+### Extract all setups (PowerShell)
+```powershell
+Get-Content ~/.dotfailes/config.csv | Select-Object -Skip 1 | ForEach-Object {
+    $fields = $_ -split '\|'
+    [pscustomobject]@{
+        Name   = $fields[6]
+        OS     = $fields[7]
+        Folder = $fields[8]
+        Repo   = $fields[9]
+        Branch = $fields[10]
+    }
+}
+```

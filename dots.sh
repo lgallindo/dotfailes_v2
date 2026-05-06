@@ -8,7 +8,9 @@ set -e
 # Default configuration
 DEFAULT_DOTFILES_DIR="${HOME}/.dotfailes"
 DOTFILES_DIR="${DOTFILES_DIR:-$DEFAULT_DOTFILES_DIR}"
-CONFIG_FILE="${DOTFILES_DIR}/config.json"
+CONFIG_FILE="${DOTFILES_DIR}/config.csv"
+REGISTRY_FILE="${DOTFILES_DIR}/registry.csv"
+VERSION="1.1.0"
 
 # Global state
 SELECTED_SETUP=""
@@ -29,29 +31,46 @@ info() {
     echo -e "${BLUE}[$(_get_timestamp)][INFO]${NC} $1"
 }
 
+_get_timestamp_iso() {
+    date -u +"%Y-%m-%dT%H:%M:%S.%3NZ"
+}
+
+# Helper to get a specific field from a setup in config.csv.
+# Fields (1-based): 7:name, 8:os, 9:folder, 10:repo, 11:branch
+_get_setup_field() {
+    local setup_name="$1"
+    local field_index="$2"
+    grep "|$setup_name|" "$CONFIG_FILE" | head -n 1 | cut -d'|' -f"$field_index"
+}
+
+# Helper to update a specific field in a setup.
+_update_setup_field() {
+    local setup_name="$1"
+    local field_index="$2"
+    local new_value="$3"
+    local tmp=$(mktemp)
+    awk -v name="$setup_name" -v idx="$field_index" -v val="$new_value" -F'|' 'BEGIN{OFS="|"} { if ($7 == name) $idx = val; print }' "$CONFIG_FILE" > "$tmp" && mv "$tmp" "$CONFIG_FILE"
+}
+
 # Resolve setup name with defaults.
-# This function centralizes the selection of the target environment.
 # Logic:
-# 1. Use SELECTED_SETUP if provided via --setup or --branch global flags.
-# 2. Fall back to the first setup defined in config.json (the "default" setup).
-# 3. Die if no setups are configured.
+# 1. Use SELECTED_SETUP if provided via --setup global flag.
+# 2. Fall back to the first setup defined in config.csv.
 _resolve_setup_name() {
     if [[ -n "$SELECTED_SETUP" ]]; then
         echo "$SELECTED_SETUP"
     else
         init_config
-        local default_setup=$(jq -r '.setups[0].name // empty' "$CONFIG_FILE")
+        # First data row (skip header line starting with [)
+        local default_setup=$(grep -v "^\[" "$CONFIG_FILE" | head -n 1 | cut -d'|' -f7)
         if [[ -z "$default_setup" ]]; then
-            die "No setups configured yet. Use 'dots init' or 'dots clone' first to create a default setup."
+            die "No setups configured yet. Use 'dots init' or 'dots clone' first."
         fi
         echo "$default_setup"
     fi
 }
 
 # Internal helper to execute git commands within a setup's context.
-# Arguments:
-#   $1: Resolved setup name.
-#   $@: Git command and its arguments.
 _git_run() {
     local setup_name="$1"
     shift
@@ -60,19 +79,21 @@ _git_run() {
 
     init_config
     
-    local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
-    if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
-        die "Setup '$setup_name' not found in configuration. Check your ~/.dotfailes/config.json or use 'dots list'."
+    # Query CSV for setup (Field 7 is name)
+    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    if [[ -z "$setup_line" ]]; then
+        die "Setup '$setup_name' not found in configuration. Use 'dots list'."
     fi
 
-    local repo_path=$(echo "$setup_json" | jq -r '.repo')
-    local work_tree=$(echo "$setup_json" | jq -r '.folder')
+    # Parse CSV fields (1-based: 7:name, 8:os, 9:folder, 10:repo, 11:branch)
+    local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
+    local work_tree=$(echo "$setup_line" | cut -d'|' -f9)
 
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' has no repository path configured."
     fi
 
-    # Execute git with specific dir and work-tree
+    # Execute git
     git --git-dir="$repo_path" --work-tree="$work_tree" "$command" "$@"
 }
 
@@ -94,15 +115,65 @@ die() {
 }
 
 # Initialize configuration file if it doesn't exist
+# Initialize configuration file if it doesn't exist.
+# Handles migration from JSON to CSV if old config is found.
 init_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+
+    # Migration from JSON to CSV
+    local json_config="${CONFIG_FILE%.csv}.json"
+    if [[ -f "$json_config" ]] && [[ ! -f "$CONFIG_FILE" ]]; then
+        info "Migrating JSON configuration to CSV format..."
+        local header="TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|SETUP_NAME|SETUP_OS|SETUP_FOLDER|SETUP_REPO|SETUP_BRANCH"
+        printf '[0|%s]\n' "$header" > "$CONFIG_FILE"
+        
+        # Migrating setups
+        if command -v jq &>/dev/null; then
+            jq -c '.setups[]' "$json_config" | while read -r setup; do
+                local name=$(echo "$setup" | jq -r '.name')
+                local os=$(echo "$setup" | jq -r '.os')
+                local folder=$(echo "$setup" | jq -r '.folder')
+                local repo=$(echo "$setup" | jq -r '.repo')
+                local branch=$(echo "$setup" | jq -r '.branch // "main"')
+                
+                printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+                    "$(_get_timestamp_iso)" "dots.sh" "$USER" "$PWD" "migration" "$VERSION" \
+                    "$name" "$os" "$folder" "$repo" "$branch" >> "$CONFIG_FILE"
+            done
+            # Update row count in header
+            local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
+            sed -i "1s/\[0|/[$count|/" "$CONFIG_FILE"
+            
+            # Migrating registry (if exists)
+            printf '[0|TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|REG_NAME|REG_URL|REG_DESC]\n' > "$REGISTRY_FILE"
+            if jq -e '.remotes_registry' "$json_config" >/dev/null 2>&1; then
+                jq -c '.remotes_registry[]' "$json_config" | while read -r reg; do
+                    local name=$(echo "$reg" | jq -r '.name')
+                    local url=$(echo "$reg" | jq -r '.url')
+                    local desc=$(echo "$reg" | jq -r '.description // ""')
+                    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+                        "$(_get_timestamp_iso)" "dots.sh" "$USER" "$PWD" "migration" "$VERSION" \
+                        "$name" "$url" "$desc" >> "$REGISTRY_FILE"
+                done
+            fi
+            count=$(grep -v "^\[" "$REGISTRY_FILE" | wc -l)
+            sed -i "1s/\[0|/[$count|/" "$REGISTRY_FILE"
+            
+            success "Migration complete. Old config archived as ${json_config}.bak"
+            mv "$json_config" "${json_config}.bak"
+        else
+            warn "jq not found. Could not migrate JSON config automatically."
+        fi
+    fi
+
+    # Create empty CSVs if they don't exist
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        mkdir -p "$(dirname "$CONFIG_FILE")"
-        cat > "$CONFIG_FILE" <<EOF
-{
-  "setups": []
-}
-EOF
-        success "Configuration file created at $CONFIG_FILE"
+        local header="TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|SETUP_NAME|SETUP_OS|SETUP_FOLDER|SETUP_REPO|SETUP_BRANCH"
+        printf '[0|%s]\n' "$header" > "$CONFIG_FILE"
+    fi
+    if [[ ! -f "$REGISTRY_FILE" ]]; then
+        local header="TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|REG_NAME|REG_URL|REG_DESC"
+        printf '[0|%s]\n' "$header" > "$REGISTRY_FILE"
     fi
 }
 
@@ -191,15 +262,29 @@ cmd_init() {
     # Create bare repository
     if [[ -d "$repo_path" ]]; then
         warn "Repository path already exists: $repo_path"
-        read -p "Do you want to continue? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            die "Initialization cancelled"
+        if [[ -t 0 ]]; then
+            read -p "Do you want to continue? (y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                die "Initialization cancelled"
+            fi
+        else
+            info "Non-interactive session, skipping directory check."
         fi
     fi
     
-    mkdir -p "$repo_path"
-    git init --bare "$repo_path"
+    mkdir -p "$repo_path" || die "Failed to create repository directory"
+    
+    # Track if we created the directory to rollback if needed
+    local repo_created=false
+    if [[ -d "$repo_path" ]]; then
+        repo_created=true
+    fi
+
+    if ! git init --bare "$repo_path" &>/dev/null; then
+        [[ "$repo_created" == "true" ]] && rm -rf "$repo_path"
+        die "Failed to initialize git repository at $repo_path"
+    fi
     success "Bare git repository initialized at $repo_path"
     
     # Add to configuration
@@ -208,14 +293,13 @@ cmd_init() {
     local setup_branch="$setup_name"
     
     # Update config with new setup
-    local temp_file=$(mktemp)
-    jq --arg name "$setup_name" \
-       --arg os "$os_type" \
-       --arg folder "$dotfiles_folder" \
-         --arg repo "$repo_path" \
-         --arg branch "$setup_branch" \
-         '.setups += [{name: $name, os: $os, folder: $folder, repo: $repo, branch: $branch}]' \
-       "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$(_get_timestamp_iso)" "dots.sh" "$USER" "$PWD" "init" "$VERSION" \
+        "$setup_name" "$os_type" "$dotfiles_folder" "$repo_path" "$setup_branch" >> "$CONFIG_FILE"
+    
+    # Update row count in header
+    local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
+    sed -i "1s/\[[0-9]*|/[$count|/" "$CONFIG_FILE"
     
     success "Setup '$setup_name' registered (OS: $os_type, Folder: $dotfiles_folder)"
     
@@ -246,7 +330,9 @@ cmd_clone() {
     fi
     
     # Clone as bare repository
-    git clone --bare "$remote_url" "$repo_path"
+    if ! git clone --bare "$remote_url" "$repo_path"; then
+        die "Failed to clone repository from $remote_url"
+    fi
     success "Repository cloned to $repo_path"
     
     # Add to configuration
@@ -254,14 +340,14 @@ cmd_clone() {
     local os_type=$(get_os)
     local setup_branch="$setup_name"
     
-    local temp_file=$(mktemp)
-    jq --arg name "$setup_name" \
-       --arg os "$os_type" \
-       --arg folder "$dotfiles_folder" \
-         --arg repo "$repo_path" \
-         --arg branch "$setup_branch" \
-         '.setups += [{name: $name, os: $os, folder: $folder, repo: $repo, branch: $branch}]' \
-       "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+    # Update config with new setup
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$(_get_timestamp_iso)" "dots.sh" "$USER" "$PWD" "clone" "$VERSION" \
+        "$setup_name" "$os_type" "$dotfiles_folder" "$repo_path" "$setup_branch" >> "$CONFIG_FILE"
+    
+    # Update row count in header
+    local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
+    sed -i "1s/\[[0-9]*|/[$count|/" "$CONFIG_FILE"
     
     success "Setup '$setup_name' registered"
     
@@ -276,7 +362,7 @@ cmd_clone() {
 cmd_list() {
     init_config
     
-    local count=$(jq '.setups | length' "$CONFIG_FILE")
+    local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
     
     if [[ "$count" -eq 0 ]]; then
         warn "No setups configured yet. Use 'dots init' or 'dots clone' to get started."
@@ -286,14 +372,8 @@ cmd_list() {
     info "Registered Setups Dashboard"
     echo ""
     
-    # Process each setup
-    jq -c '.setups[]' "$CONFIG_FILE" | while read -r setup; do
-        local name=$(echo "$setup" | jq -r '.name')
-        local os=$(echo "$setup" | jq -r '.os')
-        local folder=$(echo "$setup" | jq -r '.folder')
-        local repo=$(echo "$setup" | jq -r '.repo')
-        local branch=$(echo "$setup" | jq -r '.branch // "main"')
-        
+    # Process each setup (skip header)
+    grep -v "^\[" "$CONFIG_FILE" | while IFS='|' read -r timestamp script user pwd call version name os folder repo branch; do
         # UI Borders
         echo -e "${BLUE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
         printf "${BLUE}║${NC}  ${GREEN}%-74s${NC}  ${BLUE}║${NC}\n" "SETUP: $name"
@@ -356,16 +436,16 @@ cmd_setup_show() {
     init_config
     
     # Fetch setup configuration
-    local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
-    
-    if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
+    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_name' not found"
     fi
     
-    local os=$(echo "$setup_json" | jq -r '.os // "Unknown"')
-    local folder=$(echo "$setup_json" | jq -r '.folder // "N/A"')
-    local repo=$(echo "$setup_json" | jq -r '.repo // "N/A"')
-    local branch=$(echo "$setup_json" | jq -r '.branch // "N/A"')
+    # Parse CSV fields (1-based: 7:name, 8:os, 9:folder, 10:repo, 11:branch)
+    local os=$(echo "$setup_line" | cut -d'|' -f8)
+    local folder=$(echo "$setup_line" | cut -d'|' -f9)
+    local repo=$(echo "$setup_line" | cut -d'|' -f10)
+    local branch=$(echo "$setup_line" | cut -d'|' -f11)
     
     # Display setup information
     echo ""
@@ -434,24 +514,21 @@ cmd_bash_init() {
 
     init_config
 
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
+    local setup_branch=$(_get_setup_field "$setup_name" 11)
 
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
 
-    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+    if [[ -z "$work_tree" ]]; then
         die "Setup '$setup_name' has no work tree configured"
     fi
 
     if [[ -z "$setup_branch" ]]; then
         setup_branch="$setup_name"
-        local temp_file=$(mktemp)
-        jq --arg name "$setup_name" --arg branch "$setup_branch" \
-           '(.setups[] | select(.name == $name) | .branch) = $branch' \
-           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+        _update_setup_field "$setup_name" 11 "$setup_branch"
     fi
 
     if ! git --git-dir="$repo_path" remote get-url origin >/dev/null 2>&1; then
@@ -509,25 +586,21 @@ cmd_bash_reload() {
     local work_tree
     local setup_branch
 
-    repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
+    local setup_branch=$(_get_setup_field "$setup_name" 11)
 
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
 
-    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+    if [[ -z "$work_tree" ]]; then
         die "Setup '$setup_name' has no work tree configured"
     fi
 
     if [[ -z "$setup_branch" ]]; then
         setup_branch="$setup_name"
-        local temp_file
-        temp_file=$(mktemp)
-        jq --arg name "$setup_name" --arg branch "$setup_branch" \
-           '(.setups[] | select(.name == $name) | .branch) = $branch' \
-           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+        _update_setup_field "$setup_name" 11 "$setup_branch"
     fi
 
     if ! git --git-dir="$repo_path" remote get-url origin >/dev/null 2>&1; then
@@ -566,9 +639,10 @@ cmd_add_remote() {
     init_config
     
     # Get repository path for setup
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
     
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
     
@@ -585,9 +659,10 @@ cmd_list_remotes() {
     
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
     
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
     
@@ -599,8 +674,7 @@ cmd_list_remotes() {
 cmd_registry_list() {
     init_config
 
-    local count
-    count=$(jq '(.remotes_registry // []) | length' "$CONFIG_FILE")
+    local count=$(grep -v "^\[" "$REGISTRY_FILE" | wc -l)
 
     if [[ "$count" -eq 0 ]]; then
         warn "No registry entries configured"
@@ -609,7 +683,13 @@ cmd_registry_list() {
 
     info "Registered repositories:"
     echo ""
-    jq -r '(.remotes_registry // [])[] | "  • \(.name)\n    URL: \(.url)\n    Description: \(.description // \"N/A\")\n"' "$CONFIG_FILE"
+    # Skip header and parse registry CSV (Field 7:name, 8:url, 9:desc)
+    grep -v "^\[" "$REGISTRY_FILE" | while IFS='|' read -r timestamp script user pwd call version name url desc; do
+        echo -e "  • ${YELLOW}$name${NC}"
+        echo -e "    URL: $url"
+        echo -e "    Description: ${desc:-N/A}"
+        echo ""
+    done
 }
 
 # Use a registered repository for the selected setup's remote.
@@ -624,28 +704,22 @@ cmd_registry_use() {
 
     init_config
 
-    local registry_json
-    registry_json=$(jq --arg name "$registry_name" '(.remotes_registry // [])[] | select(.name == $name)' "$CONFIG_FILE")
+    local registry_line=$(grep "|$registry_name|" "$REGISTRY_FILE" | head -n 1)
 
-    if [[ -z "$registry_json" ]] || [[ "$registry_json" == "null" ]]; then
+    if [[ -z "$registry_line" ]]; then
         die "Registry entry '$registry_name' not found"
     fi
 
+    # Field 8 is URL
+    local registry_url=$(echo "$registry_line" | cut -d'|' -f8)
+
     local setup_name=$(_resolve_setup_name)
+    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
 
-    local repo_path
-    repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
-
-    if [[ ! -d "$repo_path" ]]; then
-        die "Repository path does not exist: $repo_path"
-    fi
-
-    local registry_url
-    registry_url=$(echo "$registry_json" | jq -r '.url // empty')
 
     if [[ -z "$registry_url" ]]; then
         die "Registry entry '$registry_name' has no url"
@@ -672,9 +746,9 @@ cmd_remove_remote() {
     
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
     
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
     
@@ -690,24 +764,21 @@ cmd_branch_ensure() {
 
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
+    local setup_branch=$(_get_setup_field "$setup_name" 11)
 
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
 
-    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+    if [[ -z "$work_tree" ]]; then
         die "Setup '$setup_name' has no work tree configured"
     fi
 
     if [[ -z "$setup_branch" ]]; then
         setup_branch="$setup_name"
-        local temp_file=$(mktemp)
-        jq --arg name "$setup_name" --arg branch "$setup_branch" \
-           '(.setups[] | select(.name == $name) | .branch) = $branch' \
-           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+        _update_setup_field "$setup_name" 11 "$setup_branch"
     fi
 
     info "Ensuring branch '$setup_branch' for setup '$setup_name'"
@@ -741,20 +812,17 @@ cmd_sync() {
     
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
+    local setup_branch=$(_get_setup_field "$setup_name" 11)
     
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
 
     if [[ -z "$setup_branch" ]]; then
         setup_branch="$setup_name"
-        local temp_file=$(mktemp)
-        jq --arg name "$setup_name" --arg branch "$setup_branch" \
-           '(.setups[] | select(.name == $name) | .branch) = $branch' \
-           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+        _update_setup_field "$setup_name" 11 "$setup_branch"
     fi
 
     local branch="${branch_override:-$setup_branch}"
@@ -779,8 +847,8 @@ cmd_status() {
     
     init_config
     
-    local setup_json=$(jq --arg name "$setup_name" '.setups[] | select(.name == $name)' "$CONFIG_FILE")
-    if [[ -z "$setup_json" ]] || [[ "$setup_json" == "null" ]]; then
+    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_name' not found in configuration."
     fi
     
@@ -802,8 +870,8 @@ cmd_commit() {
     
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
     
     # 1. Identify files
     local files=$(git --git-dir="$repo_path" --work-tree="$work_tree" status --porcelain | awk '{print $2}' | xargs | sed 's/ /, /g')
@@ -901,15 +969,15 @@ cmd_merge() {
 
     init_config
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
+    local setup_branch=$(_get_setup_field "$setup_name" 11)
 
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
 
-    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+    if [[ -z "$work_tree" ]]; then
         die "Setup '$setup_name' has no work tree configured"
     fi
 
@@ -963,24 +1031,21 @@ cmd_ensure_remote_branch() {
         die "No setups configured yet"
     fi
     
-    local repo_path=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
-    local work_tree=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .folder' "$CONFIG_FILE")
-    local setup_branch=$(jq -r --arg name "$setup_name" '.setups[] | select(.name == $name) | .branch // empty' "$CONFIG_FILE")
+    local repo_path=$(_get_setup_field "$setup_name" 10)
+    local work_tree=$(_get_setup_field "$setup_name" 9)
+    local setup_branch=$(_get_setup_field "$setup_name" 11)
     
-    if [[ -z "$repo_path" ]] || [[ "$repo_path" == "null" ]]; then
+    if [[ -z "$repo_path" ]]; then
         die "Setup '$setup_name' not found"
     fi
     
-    if [[ -z "$work_tree" ]] || [[ "$work_tree" == "null" ]]; then
+    if [[ -z "$work_tree" ]]; then
         die "Setup '$setup_name' has no work tree configured"
     fi
     
     if [[ -z "$setup_branch" ]]; then
         setup_branch="$setup_name"
-        local temp_file=$(mktemp)
-        jq --arg name "$setup_name" --arg branch "$setup_branch" \
-           '(.setups[] | select(.name == $name) | .branch) = $branch' \
-           "$CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$CONFIG_FILE"
+        _update_setup_field "$setup_name" 11 "$setup_branch"
     fi
     
     if ! git --git-dir="$repo_path" remote get-url "$remote_name" >/dev/null 2>&1; then
@@ -1164,16 +1229,14 @@ cmd_rm() {
 
     init_config
 
-    # Verify that the setup exists
-    local exists
-    exists=$(jq -r --arg name "$setup_to_remove" '.setups[] | select(.name == $name) | .name' "$CONFIG_FILE")
-    if [[ -z "$exists" ]] || [[ "$exists" == "null" ]]; then
+    # Verify that the setup exists (Field 7 is name)
+    local setup_line=$(grep "|$setup_to_remove|" "$CONFIG_FILE" | head -n 1)
+    if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_to_remove' not found in configuration."
     fi
 
-    # Capture the repository path before removal if purge is requested
-    local repo_path
-    repo_path=$(jq -r --arg name "$setup_to_remove" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+    # Capture the repository path before removal (Field 10 is repo)
+    local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
 
     # Request user confirmation
     warn "Are you sure you want to remove setup '$setup_to_remove'? [y/N]"
@@ -1187,11 +1250,14 @@ cmd_rm() {
         die "Operation cancelled."
     fi
 
-    # Remove the entry from config.json
-    local tmp_config
-    tmp_config=$(mktemp)
-    jq --arg name "$setup_to_remove" 'del(.setups[] | select(.name == $name))' "$CONFIG_FILE" > "$tmp_config" && mv "$tmp_config" "$CONFIG_FILE"
+    # Remove the entry from config.csv
+    local tmp_config=$(mktemp)
+    grep -v "|$setup_to_remove|" "$CONFIG_FILE" > "$tmp_config" && mv "$tmp_config" "$CONFIG_FILE"
     
+    # Update row count in header
+    local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
+    sed -i "1s/\[[0-9]*|/[$count|/" "$CONFIG_FILE"
+
     success "Setup '$setup_to_remove' removed from configuration."
 
     # Handle repository purging
