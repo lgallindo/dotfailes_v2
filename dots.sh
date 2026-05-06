@@ -1045,6 +1045,10 @@ COMMANDS:
         
     list
         List all configured setups
+ 
+    rm <setup_name> [--purge]
+        Remove a setup from configuration
+        Use --purge to also delete the bare git repository
 
     setup:show
         Show detailed information about the selected setup
@@ -1142,6 +1146,66 @@ CONFIGURATION:
 EOF
 }
 
+# Remove a setup from configuration.
+# Usage: dots rm <setup_name> [--purge]
+# By default, only the entry in config.json is removed.
+# Use --purge to also delete the bare git repository.
+cmd_rm() {
+    local setup_to_remove="$1"
+    local purge=false
+    
+    if [[ "$2" == "--purge" ]]; then
+        purge=true
+    fi
+
+    if [[ -z "$setup_to_remove" ]]; then
+        die "Usage: $0 rm <setup_name> [--purge]"
+    fi
+
+    init_config
+
+    # Verify that the setup exists
+    local exists
+    exists=$(jq -r --arg name "$setup_to_remove" '.setups[] | select(.name == $name) | .name' "$CONFIG_FILE")
+    if [[ -z "$exists" ]] || [[ "$exists" == "null" ]]; then
+        die "Setup '$setup_to_remove' not found in configuration."
+    fi
+
+    # Capture the repository path before removal if purge is requested
+    local repo_path
+    repo_path=$(jq -r --arg name "$setup_to_remove" '.setups[] | select(.name == $name) | .repo' "$CONFIG_FILE")
+
+    # Request user confirmation
+    warn "Are you sure you want to remove setup '$setup_to_remove'? [y/N]"
+    if [[ -t 0 ]]; then
+        read -r response
+    else
+        response="y"
+        info "Non-interactive session detected, assuming yes."
+    fi
+    if [[ ! "$response" =~ ^[yY]$ ]]; then
+        die "Operation cancelled."
+    fi
+
+    # Remove the entry from config.json
+    local tmp_config
+    tmp_config=$(mktemp)
+    jq --arg name "$setup_to_remove" 'del(.setups[] | select(.name == $name))' "$CONFIG_FILE" > "$tmp_config" && mv "$tmp_config" "$CONFIG_FILE"
+    
+    success "Setup '$setup_to_remove' removed from configuration."
+
+    # Handle repository purging
+    if [[ "$purge" == true ]]; then
+        if [[ -d "$repo_path" ]]; then
+            info "Purging repository at $repo_path..."
+            rm -rf "$repo_path"
+            success "Repository deleted."
+        else
+            warn "Repository path '$repo_path' not found or is not a directory. Skipping purge."
+        fi
+    fi
+}
+
 # Main command dispatcher
 main() {
     # Global option parsing
@@ -1169,6 +1233,7 @@ main() {
         init)             cmd_init "$@" ;;
         clone)            cmd_clone "$@" ;;
         list)             cmd_list "$@" ;;
+        rm)               cmd_rm "$@" ;;
         setup:show)       cmd_setup_show "$@" ;;
         bash:list)        cmd_bash_list "$@" ;;
         bash:init)        cmd_bash_init "$@" ;;
