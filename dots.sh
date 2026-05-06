@@ -21,8 +21,12 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Helper functions
+_get_timestamp() {
+    date +"%Y-%m-%d %H:%M:%S"
+}
+
 info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}[$(_get_timestamp)][INFO]${NC} $1"
 }
 
 # Resolve setup name with defaults
@@ -72,15 +76,15 @@ _git_run() {
 }
 
 success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[$(_get_timestamp)][SUCCESS]${NC} $1"
 }
 
 warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    echo -e "${YELLOW}[$(_get_timestamp)][WARN]${NC} $1"
 }
 
 error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
+    echo -e "${RED}[$(_get_timestamp)][ERROR]${NC} $1" >&2
 }
 
 die() {
