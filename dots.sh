@@ -160,6 +160,7 @@ init_config() {
             sed -i "1s/\[0|/[$count|/" "$REGISTRY_FILE"
             
             success "Migration complete. Old config archived as ${json_config}.bak"
+            info "To rename your setups to a more semantic name, use: dots rename <old_name> <new_name>"
             mv "$json_config" "${json_config}.bak"
         else
             warn "jq not found. Could not migrate JSON config automatically."
