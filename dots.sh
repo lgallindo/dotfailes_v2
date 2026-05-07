@@ -139,6 +139,13 @@ init_config() {
                 printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
                     "$(_get_timestamp_iso)" "dots.sh" "$USER" "$PWD" "migration" "$VERSION" \
                     "$name" "$os" "$folder" "$repo" "$branch" >> "$CONFIG_FILE"
+
+                # Suggest rename if it looks like the current machine but has a different name
+                local suggested_name="$(hostname)-$(get_os)"
+                if [[ "$os" == "$(get_os)" ]] && [[ "$name" != "$suggested_name" ]]; then
+                    info "Setup '$name' matches this machine but uses an old naming convention."
+                    info "Consider renaming it: dots rename '$name' '$suggested_name'"
+                fi
             done
             # Update row count in header
             local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
@@ -160,7 +167,6 @@ init_config() {
             sed -i "1s/\[0|/[$count|/" "$REGISTRY_FILE"
             
             success "Migration complete. Old config archived as ${json_config}.bak"
-            info "To rename your setups to a more semantic name, use: dots rename <old_name> <new_name>"
             mv "$json_config" "${json_config}.bak"
         else
             warn "jq not found. Could not migrate JSON config automatically."
