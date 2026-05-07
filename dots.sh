@@ -28,7 +28,7 @@ _get_timestamp() {
 }
 
 info() {
-    echo -e "${BLUE}[$(_get_timestamp)][INFO]${NC} $1"
+    echo -e "${BLUE}[$(_get_timestamp)][INFO]${NC} $1" >&2
 }
 
 _get_timestamp_iso() {
@@ -40,7 +40,7 @@ _get_timestamp_iso() {
 _get_setup_field() {
     local setup_name="$1"
     local field_index="$2"
-    grep "|$setup_name|" "$CONFIG_FILE" | head -n 1 | cut -d'|' -f"$field_index"
+    grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1 | cut -d'|' -f"$field_index"
 }
 
 # Helper to update a specific field in a setup.
@@ -80,7 +80,7 @@ _git_run() {
     init_config
     
     # Query CSV for setup (Field 7 is name)
-    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1)
     if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_name' not found in configuration. Use 'dots list'."
     fi
@@ -98,11 +98,11 @@ _git_run() {
 }
 
 success() {
-    echo -e "${GREEN}[$(_get_timestamp)][SUCCESS]${NC} $1"
+    echo -e "${GREEN}[$(_get_timestamp)][SUCCESS]${NC} $1" >&2
 }
 
 warn() {
-    echo -e "${YELLOW}[$(_get_timestamp)][WARN]${NC} $1"
+    echo -e "${YELLOW}[$(_get_timestamp)][WARN]${NC} $1" >&2
 }
 
 error() {
@@ -436,7 +436,7 @@ cmd_setup_show() {
     init_config
     
     # Fetch setup configuration
-    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1)
     if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_name' not found"
     fi
@@ -639,7 +639,7 @@ cmd_add_remote() {
     init_config
     
     # Get repository path for setup
-    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1)
     local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
     
     if [[ -z "$repo_path" ]]; then
@@ -659,7 +659,7 @@ cmd_list_remotes() {
     
     init_config
     
-    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1)
     local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
     
     if [[ -z "$repo_path" ]]; then
@@ -704,7 +704,7 @@ cmd_registry_use() {
 
     init_config
 
-    local registry_line=$(grep "|$registry_name|" "$REGISTRY_FILE" | head -n 1)
+    local registry_line=$(grep -F "|$registry_name|" "$REGISTRY_FILE" | head -n 1)
 
     if [[ -z "$registry_line" ]]; then
         die "Registry entry '$registry_name' not found"
@@ -714,7 +714,7 @@ cmd_registry_use() {
     local registry_url=$(echo "$registry_line" | cut -d'|' -f8)
 
     local setup_name=$(_resolve_setup_name)
-    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1)
     local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
 
     if [[ -z "$repo_path" ]]; then
@@ -847,7 +847,7 @@ cmd_status() {
     
     init_config
     
-    local setup_line=$(grep "|$setup_name|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_name|" "$CONFIG_FILE" | head -n 1)
     if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_name' not found in configuration."
     fi
@@ -1115,6 +1115,10 @@ COMMANDS:
         Remove a setup from configuration
         Use --purge to also delete the bare git repository
 
+    rename <old_name> <new_name>
+        Rename a setup in the configuration
+        Also renames the local branch if it matches the old name
+
     setup:show
         Show detailed information about the selected setup
 
@@ -1230,7 +1234,7 @@ cmd_rm() {
     init_config
 
     # Verify that the setup exists (Field 7 is name)
-    local setup_line=$(grep "|$setup_to_remove|" "$CONFIG_FILE" | head -n 1)
+    local setup_line=$(grep -F "|$setup_to_remove|" "$CONFIG_FILE" | head -n 1)
     if [[ -z "$setup_line" ]]; then
         die "Setup '$setup_to_remove' not found in configuration."
     fi
@@ -1252,7 +1256,7 @@ cmd_rm() {
 
     # Remove the entry from config.csv
     local tmp_config=$(mktemp)
-    grep -v "|$setup_to_remove|" "$CONFIG_FILE" > "$tmp_config" && mv "$tmp_config" "$CONFIG_FILE"
+    grep -vF "|$setup_to_remove|" "$CONFIG_FILE" > "$tmp_config" && mv "$tmp_config" "$CONFIG_FILE"
     
     # Update row count in header
     local count=$(grep -v "^\[" "$CONFIG_FILE" | wc -l)
@@ -1268,6 +1272,54 @@ cmd_rm() {
             success "Repository deleted."
         else
             warn "Repository path '$repo_path' not found or is not a directory. Skipping purge."
+        fi
+    fi
+}
+
+# Rename a setup in the configuration and optionally in the repository.
+# Usage: dots rename <old_name> <new_name>
+cmd_rename() {
+    local old_name="$1"
+    local new_name="$2"
+    
+    if [[ -z "$old_name" ]] || [[ -z "$new_name" ]]; then
+        die "Usage: $0 rename <old_name> <new_name>"
+    fi
+    
+    init_config
+    
+    # 1. Verify old setup exists
+    local setup_line=$(grep -F "|$old_name|" "$CONFIG_FILE" | head -n 1)
+    if [[ -z "$setup_line" ]]; then
+        die "Setup '$old_name' not found."
+    fi
+    
+    # 2. Verify new name doesn't exist
+    if grep -qF "|$new_name|" "$CONFIG_FILE"; then
+        die "Setup '$new_name' already exists."
+    fi
+    
+    # 3. Get repo path and current branch
+    local repo_path=$(echo "$setup_line" | cut -d'|' -f10)
+    
+    # 4. Update config.csv (Field 7: name, Field 11: branch)
+    local tmp_config=$(mktemp)
+    awk -v old="$old_name" -v new="$new_name" -F'|' 'BEGIN{OFS="|"} { 
+        if ($7 == old) { 
+            $7 = new; 
+            if ($11 == old) $11 = new 
+        } 
+        print 
+    }' "$CONFIG_FILE" > "$tmp_config" && mv "$tmp_config" "$CONFIG_FILE"
+    
+    success "Setup renamed from '$old_name' to '$new_name' in configuration."
+    
+    # 5. Rename branch in bare repo if it matches old name
+    if [[ -d "$repo_path" ]]; then
+        if git --git-dir="$repo_path" rev-parse --verify "$old_name" &>/dev/null; then
+            info "Renaming branch '$old_name' to '$new_name' in repository..."
+            git --git-dir="$repo_path" branch -m "$old_name" "$new_name"
+            success "Branch renamed successfully."
         fi
     fi
 }
@@ -1300,6 +1352,7 @@ main() {
         clone)            cmd_clone "$@" ;;
         list)             cmd_list "$@" ;;
         rm)               cmd_rm "$@" ;;
+        rename)           cmd_rename "$@" ;;
         setup:show)       cmd_setup_show "$@" ;;
         bash:list)        cmd_bash_list "$@" ;;
         bash:init)        cmd_bash_init "$@" ;;
