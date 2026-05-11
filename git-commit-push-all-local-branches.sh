@@ -18,13 +18,13 @@ if [[ -d .git/rebase-merge || -d .git/rebase-apply || -f .git/MERGE_HEAD ]]; the
   exit 1
 fi
 
-mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/)
+mapfile -t branches < <(git for-each-ref --format='%(refname:lstrip=2)' refs/heads/)
 
 for branch in "${branches[@]}"; do
   echo
   echo "=== branch: $branch ==="
 
-  git switch "$branch"
+  git switch --no-guess "$branch"
 
   if [[ -n "$(git status --porcelain)" ]]; then
     git add -A
@@ -40,7 +40,7 @@ for branch in "${branches[@]}"; do
   fi
 done
 
-git switch "$current_branch"
+git switch --no-guess "$current_branch"
 
 echo
 echo "DONE. Restored branch: $current_branch"
