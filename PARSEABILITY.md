@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Parseability Examples
 
 Config and rollback logs use pipe-delimited format: `FIELD1|FIELD2|FIELD3|...`
@@ -115,4 +116,155 @@ Timeline-building script (bash):
                 ;;
         esac
     done
+```
+=======
+# Parseability Examples
+
+Config and rollback logs use pipe-delimited format: `FIELD1|FIELD2|FIELD3|...`
+
+## Bash/Zsh Examples
+
+### Extract all OS values from config.log
+```bash
+while IFS='|' read -r timestamp script user pwd call version key value; do
+    [[ "$key" == "OS" ]] && echo "Detected OS: $value"
+done < ./logs/config.log
+```
+
+### Extract REPO_PATH and SHELL_CONFIG
+```bash
+grep '|REPO_PATH|' ./logs/config.log | cut -d'|' -f8
+grep '|SHELL_CONFIG|' ./logs/config.log | cut -d'|' -f8
+```
+
+### Timeline: combine config and rollback logs by timestamp
+```bash
+(cat ./logs/config.log; cat ./logs/rollback.log) | \
+    sort -t'|' -k1 | \
+    while IFS='|' read -r ts script user pwd call version key_or_action rest; do
+        echo "[$ts] $script: $key_or_action"
+    done
+```
+
+### Extract all revert commands and execute them
+```bash
+while IFS='|' read -r timestamp script user pwd call version action description revert_cmd; do
+    [[ -n "$revert_cmd" ]] && echo "# To revert $action: $revert_cmd"
+done < ./logs/rollback.log
+```
+
+### Find all alias additions
+```bash
+grep '|alias_added|' ./logs/rollback.log | cut -d'|' -f8-
+```
+
+## PowerShell Examples
+
+### Extract all OS values
+```powershell
+Get-Content ./logs/config.log | ForEach-Object {
+    $fields = $_ -split '\|'
+    if ($fields[6] -eq "OS") { Write-Host "Detected OS: $($fields[7])" }
+}
+```
+
+### Extract REPO_PATH
+```powershell
+$repoPath = (Get-Content ./logs/config.log | Where-Object { $_ -match '\|REPO_PATH\|' } | ForEach-Object {
+    $fields = $_ -split '\|'
+    $fields[7]
+}) | Select-Object -Last 1
+```
+
+### Build timeline
+```powershell
+$config = Get-Content ./logs/config.log | ForEach-Object { [pscustomobject]@{Log=$_; Type="config"} }
+$rollback = Get-Content ./logs/rollback.log | ForEach-Object { [pscustomobject]@{Log=$_; Type="rollback"} }
+($config + $rollback) | ForEach-Object {
+    $fields = $_.Log -split '\|'
+    "$($fields[0]) [$($_.Type)] - $($fields[1])"
+} | Sort-Object
+```
+
+### Execute all revert commands
+```powershell
+Get-Content ./logs/rollback.log | ForEach-Object {
+    $fields = $_ -split '\|'
+    if ($fields[8]) {
+        Write-Host "Reverting: $($fields[7])`nCommand: $($fields[8])"
+        # Invoke-Expression $fields[8]  # Uncomment to execute
+    }
+}
+```
+
+## Row Count Validation
+
+All files start with `[n|HEADER]` where n is the data row count and HEADER is the list of field names:
+
+```bash
+# Bash: validate config.log has expected rows
+first_line=$(head -n1 ./logs/config.log)
+# Extract the number before the first pipe inside brackets
+expected_rows=$(echo "$first_line" | sed -n 's/\[\([0-9]*\)|.*/\1/p')
+# Subtract 1 for the [n|HEADER] line and 1 for the field name comment if present
+# (Actual implementation in install.sh prepends [n|HEADER] and then has the data rows)
+# Wait, let's look at the current structure in install.sh
+actual_rows=$(($(wc -l < ./logs/config.log) - 1))  
+[[ "$expected_rows" == "$actual_rows" ]] && echo "✓ Row count valid" || echo "✗ Row count mismatch ($expected_rows vs $actual_rows)"
+```
+
+```powershell
+# PowerShell: validate rollback.log
+$first = (Get-Content ./logs/rollback.log)[0]
+$expected = [int]($first -split '\|' | ForEach-Object { $_ -replace '\[|\]', '' })[0]
+$actual = (Get-Content ./logs/rollback.log).Count - 1
+if ($expected -eq $actual) { Write-Host "✓ Row count valid" } else { Write-Host "✗ Row count mismatch" }
+```
+
+## Joining Config and Rollback by Timestamp
+
+Timeline-building script (bash):
+```bash
+#!/bin/bash
+(cat ./logs/config.log; cat ./logs/rollback.log) | \
+    tail -n +2 | \
+    sort -t'|' -k1 | \
+    while IFS='|' read -r ts script user pwd call version type desc_or_key value_or_revert; do
+        case "$type" in
+            CALL|OS|SHELL|REPO_PATH)
+                echo "$ts|CONFIG|$script|$type=$value_or_revert"
+                ;;
+            *)
+                echo "$ts|ACTION|$script|$type: $desc_or_key"
+                ;;
+        esac
+    done
+```
+
+## Configuration Queries (config.csv)
+
+The `config.csv` file uses the same pipe-delimited format as the logs.
+
+### List all setups for a specific OS (Bash)
+```bash
+grep '|Linux|' ~/.dotfailes/config.csv | cut -d'|' -f7
+```
+
+### Get repository path for a specific setup (Bash)
+```bash
+grep '|my-setup|' ~/.dotfailes/config.csv | cut -d'|' -f10
+```
+
+### Extract all setups (PowerShell)
+```powershell
+Get-Content ~/.dotfailes/config.csv | Select-Object -Skip 1 | ForEach-Object {
+    $fields = $_ -split '\|'
+    [pscustomobject]@{
+        Name   = $fields[6]
+        OS     = $fields[7]
+        Folder = $fields[8]
+        Repo   = $fields[9]
+        Branch = $fields[10]
+    }
+}
 ```

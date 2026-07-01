@@ -1,29 +1,32 @@
 # dots_v2
 
-**Version 1.0.0**
+**Version 1.1.0**
 
-### Core Scripts
-
-- [dots.sh](dots.sh): Primary bash script for managing dotfiles using bare git repositories.
-- [install.sh](install.sh): Interactive/non-interactive installation and environment setup script.
-
-### Documentation
-
-- [Documentation Index](docs/README.md): Central hub for project policies and guides.
+[![Automated Tests](https://github.com/lgallindo/dotfailes_v2/actions/workflows/tests.yml/badge.svg)](https://github.com/lgallindo/dotfailes_v2/actions/workflows/tests.yml)
 
 ## Overview
 
-**dots_v2** is a lightweight, cross-platform dotfile management system that uses bare git repositories to track and synchronize your configuration files across multiple machines. It supports Linux, MacOS, and Windows with dedicated scripts for each platform.
+**dots_v2** is a lightweight, high-integrity dotfile management system that uses **Bare Git Repositories** to track and synchronize configuration files across multiple environments. It is designed for maximum auditability, zero external dependencies (no `jq` required), and robust lifecycle management.
+
+## Core Principles
+
+1.  **Zero-Dependency**: No external tools required for daily use. Configuration is stored in pipe-delimited CSV (TOON format).
+2.  **Audit-Ready**: Every action is logged with detailed metadata and row-count headers.
+3.  **Safe-by-Default**: Robust rollback logic and `--purge` flags ensure the system remains clean.
+4.  **Flexible Context**: Global `--setup` flag allows managing multiple environments from a single interface.
+
+---
 
 ## Features
 
-- **Bare Git Repositories**: Manage dotfiles without moving them from their original locations.
-- **Cross-Platform**: Support for Bash, Zsh, and PowerShell.
-- **Interactive Setup**: Simple installation script for quick configuration.
-- **Non-Interactive Mode**: Fully automated installation via CLI flags.
-- **Auditable History**: Rigid commit standards and log tracking.
-- **Rollback System**: Easily revert configuration changes.
+- ✨ **Bare Git Repository**: Track files in-place without nested `.git` folders.
+- 📋 **CSV-Based Configuration**: Human-readable, grep-able, and `jq`-free config storage.
+- 🔄 **Global Context Management**: Switch between setups using `--setup <name>`.
+- 🛡️ **Lifecycle Safety**: Automatic rollback on failed `init` or `clone` operations.
+- 📑 **Standardized Logging**: Detailed `config.log` and `rollback.log` with `[n|HEADER]` metadata.
+- 🚀 **Automated Testing**: TDD-validated logic using `bats-core`.
 
+<<<<<<< HEAD
 ## Logs and Process Documentation
 
 The `install.sh` script automatically logs all configuration changes in the `logs/` directory:
@@ -124,96 +127,65 @@ Dotfile management using bare git repositories with platform-specific scripts.
 - 🔄 **Remote Sync**: Easily push and pull changes from remote repositories
 - 🎯 **Flexible**: Choose any directory as your dotfiles folder (default: home directory)
 - 📦 **No Dependencies**: Only requires git and a JSON parser (jq for bash/zsh)
+=======
+---
+>>>>>>> origin/feat/dots-remove-command
 
 ## Installation
 
 ### Prerequisites
 
-**For Bash/Zsh scripts:**
-- git
-- jq (JSON processor)
+- **Git**: Mandatory for version control.
+- **Bash**: Required for `dots.sh` (Linux/WSL/MacOS).
+- **PowerShell**: Required for `dots.ps1` (Windows).
 
-**For PowerShell script:**
-- git
-- PowerShell 5.1+ or PowerShell Core 6+
+> [!NOTE]
+> `jq` is **optional**. It is only used for one-time automatic migration of old `.json` configurations to the new `.csv` format.
 
-### Install jq
-
-**Linux (Debian/Ubuntu):**
-```bash
-sudo apt-get install jq
-```
-
-**MacOS:**
-```bash
-brew install jq
-```
-
-**Windows (Git Bash/MSYS2):**
-```bash
-pacman -S jq  # MSYS2
-```
-
-### Get the scripts
-
-Clone this repository:
+### Quick Install
 
 ```bash
 git clone https://github.com/lgallindo/dotfailes_v2.git
 cd dotfailes_v2
-```
-
-#### Quick Installation (Linux/MacOS)
-
-Use the installation script for an interactive setup:
-
-```bash
 ./install.sh
 ```
 
-The script will:
-- Check prerequisites (git and jq)
-- Detect your OS and select the appropriate script
-- Guide you through repository initialization
-- Optionally add the dotfiles alias to your shell configuration
+The interactive installer will:
+1. Detect your OS and shell.
+2. Initialize your first dotfile setup.
+3. Configure your shell with the `dots` alias.
 
-**Non-Interactive Mode:**
-```bash
-./install.sh \
-  --repo-path ~/.dotfiles \
-  --setup-name my-laptop \
-  --dotfiles-folder ~/ \
-  --remote https://github.com/user/dotfiles.git \
-  --shell bash \
-  --no-alias
-```
+---
 
-**Available Options:**
-- `--repo-path PATH` - Where to store the bare git repository
-- `--setup-name NAME` - Identifier for this setup (default: hostname-OS)
-- `--dotfiles-folder DIR` - Directory to track (default: $HOME)
-- `--no-alias` - Skip adding shell alias
-- `--remote URL` - Git remote URL for the repository
-- `--shell SHELL` - Force specific shell (bash/zsh/ksh/dash/fish, default: auto-detect)
-- `--rollback` - Undo previous installation (removes aliases, optionally removes repo)
-- `--help` - Show usage information
+## CLI Usage
 
-**Rollback:**
-```bash
-./install.sh --rollback
-```
+### Setup & Initialization
 
-For detailed workflow documentation, see `INSTALL_WORKFLOW.md`.
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `init` | `dots init <repo_path> [setup_name] [folder]` | Initialize a new bare repo. |
+| `clone` | `dots clone <url> <repo_path> [setup_name] [folder]` | Clone an existing setup. |
+| `rm` | `dots rm <setup_name> [--purge]` | Remove a setup from registry (purge deletes repo). |
+| `list` | `dots list` | Dashboard of all registered setups. |
 
-#### Manual Installation
+### Configuration Management
 
+<<<<<<< HEAD
 Or download individual scripts:
 - `dotfailes.sh` - for Linux and general Unix systems
 - `dotfailes.zsh` - for MacOS (zsh)
 - `dotfailes.ps1` - for Windows (PowerShell/Git Bash/MSYS2)
+=======
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `setup:show` | `dots setup:show` | Detailed info for the current/selected setup. |
+| `registry:list` | `dots registry:list` | List known remote repository templates. |
+| `registry:use` | `dots registry:use <name>` | Point the current setup to a registry remote. |
+>>>>>>> origin/feat/dots-remove-command
 
-## Quick Start
+### Daily Workflow (Git Proxy)
 
+<<<<<<< HEAD
 ### 1. Initialize a new dotfile repository
 
 **Bash/Zsh:**
@@ -244,23 +216,25 @@ function dotfiles { git --git-dir="$HOME\.dotfiles" --work-tree="$HOME" @args }
 ```
 
 ### 3. Start tracking your dotfiles
+=======
+Commands like `add`, `commit`, `push`, `pull`, `diff`, `log`, and `status` are proxied directly to the bare git repository of the active setup.
+>>>>>>> origin/feat/dots-remove-command
 
 ```bash
-# Add files to track
-dotfiles add ~/.bashrc
-dotfiles add ~/.vimrc
-dotfiles add ~/.gitconfig
+# Using the default setup
+dots status
+dots add .bashrc
+dots commit -m "update bashrc"
+dots push
 
-# Commit changes
-dotfiles commit -m "Add initial dotfiles"
-
-# Set up a remote (optional)
-dotfiles remote add origin https://github.com/yourusername/dotfiles.git
-dotfiles push -u origin main
+# Target a specific setup
+dots --setup work-laptop status
+dots --setup server-prod pull
 ```
 
-### 4. Clone on another machine
+---
 
+<<<<<<< HEAD
 **Bash/Zsh:**
 ```bash
 ./dotfailes.sh clone https://github.com/yourusername/dotfiles.git ~/.dotfiles
@@ -270,13 +244,21 @@ dotfiles push -u origin main
 ```powershell
 .\dotfailes.ps1 clone https://github.com/yourusername/dotfiles.git C:\Users\username\.dotfiles
 ```
+=======
+## Logging & Auditability
 
-## Usage
+All operations are recorded in the `~/.dotfailes/logs/` directory using the **TOON** (Tab/CSV Organized Object Notation) format.
+>>>>>>> origin/feat/dots-remove-command
 
-### Commands
+### Log Format `[n|HEADER]`
+Files start with a metadata header containing the row count and field names:
+`[5|TIMESTAMP|SCRIPT|USER|PWD|CALL|VERSION|KEY|VALUE]`
 
-All scripts support the same commands:
+Refer to [PARSEABILITY.md](PARSEABILITY.md) for examples on how to query logs and configs using `grep`, `awk`, or PowerShell.
 
+---
+
+<<<<<<< HEAD
 #### Initialize a new repository
 ```bash
 dotfailes.sh init <repo_path> [setup_name] [dotfiles_folder]
@@ -429,20 +411,19 @@ Use `.gitignore` in your dotfiles repository to exclude sensitive files.
 ### Ignoring Files
 
 Create a `.gitignore` in your home directory (or dotfiles folder) to exclude files you don't want to track:
+=======
+## Advanced: Bare Git Repository Manual Usage
+
+If you prefer using git directly, the `install.sh` script creates an alias like this:
+>>>>>>> origin/feat/dots-remove-command
 
 ```bash
-# Add to your dotfiles repository
-dotfiles add ~/.gitignore
+alias dots='git --git-dir=$HOME/.dotfiles --work-tree=$HOME'
 ```
 
-Example `.gitignore`:
-```
-# Exclude sensitive files
-.ssh/id_*
-.ssh/*.pem
-.gnupg/
-.aws/credentials
+This allows you to manage your dotfiles exactly like any other git repository without moving them into a specific folder.
 
+<<<<<<< HEAD
 # Exclude cache and temporary files
 .cache/
 .local/
@@ -566,44 +547,22 @@ chmod +x dotfailes.sh dotfailes.zsh
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+=======
+---
+
+## Troubleshooting
+
+- **"Setup not found"**: Ensure you have run `dots init` or `dots clone`. Check `~/.dotfailes/config.csv`.
+- **Conflicts on Checkout**: If files already exist, move them to a backup folder before checking out:
+  `dots checkout 2>&1 | grep -E "^\s+" | awk {'print $1'} | xargs -I{} mv {} ~/.dotfiles-backup/{}`
+>>>>>>> origin/feat/dots-remove-command
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0.
+
+---
 
 ## Acknowledgments
 
-Inspired by various dotfile management approaches and the bare git repository technique for tracking dotfiles without nested repositories.
-
-## Support
-
-For issues, questions, or suggestions, please open an issue on the GitHub repository.
-
-## Pending Items
-
-- Expand and maintain `bats` tests for all new features and edge cases.
-- Continue implementing automation and documentation per `.github/copilot-instructions.md`.
-- Review and improve rollback and logging mechanisms as features evolve.
-- Refactor and modularize scripts for maintainability.
-- Add more robust error handling and reporting.
-- Document all new features and changes in the logs and README.
-
-## Future Plans / Roadmap
-
-- Integrate CI/CD for automated testing and deployment of dotfiles.
-- Add support for additional shells and platforms.
-- Implement advanced conflict resolution strategies for dotfiles vs. git.
-- Provide a web-based dashboard for log and rollback review.
-- Enable encrypted secrets management for sensitive dotfiles.
-- Expand remote setup and multi-host orchestration features.
-
-## Warning: Do Not Mix Up Git and Dotfiles
-
-**Important:**
-
-- Keep your dotfiles repository and your git configuration (`.gitconfig`, `.gitignore`, etc.) logically separated unless you are certain of the implications.
-- Mixing up git's own configuration files with managed dotfiles can cause merge conflicts, credential leaks, or unexpected behavior.
-- Always review changes to `.git*` files before committing or pushing.
-- Use the provided logging and rollback features to recover from accidental merges or overwrites.
-
-For more details, see the [Logging and Rollback](#logs-and-process-documentation) section and `.github/copilot-instructions.md`.
+Inspired by the "bare git repository" technique for dotfile management. Standardized for high-compliance and multi-setup environments.

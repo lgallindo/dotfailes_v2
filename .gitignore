@@ -21,5 +21,9 @@ logs/
 .specstory/
 *.backup*
 *.local*
+<<<<<<< HEAD
 docs/latest-copilot-log.md
+=======
+docs/latest-copilot-log.mddocs/CONTRADICTIONS.md
+>>>>>>> origin/feat/dots-remove-command
 docs/CONTRADICTIONS.md

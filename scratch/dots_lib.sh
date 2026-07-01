@@ -433,8 +433,6 @@ cmd_bash_list() {
     _git_run "$setup_name" ls-tree -r --name-only HEAD | grep -E "^\.bash" | while read -r item; do
         echo -e "  • ${YELLOW}$item${NC}"
     done
-
-    echo ""
 }
 
 # Show detailed information about the selected setup.
@@ -1391,4 +1389,3 @@ main() {
     esac
 }
 
-main "$@"

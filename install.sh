@@ -166,16 +166,29 @@ append_rollback() {
     info "[${timestamp}] Action logged: $action"
 }
 
-# Update log file headers with row count
+# Update log file headers with row count and field names [n|HEADER]
 update_log_headers() {
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    
+    # Update config.log
     if [[ -f "./logs/config.log" ]]; then
-        # Check if summary already exists
+        local header="TIMESTAMP|SCRIPT|USER|PWD|CALL_ARGS|VERSION|KEY|VALUE"
+        local field_count=$(echo "$header" | awk -F'|' '{print NF}')
+        # Prepend the count header to the first line
+        sed -i "1s/^/[$CONFIG_ROW_COUNT|$header]\n/" "./logs/config.log"
+        # Append summary at the end
         if ! tail -n 1 "./logs/config.log" | grep -q "# TOTAL_ROWS:"; then
             printf '# TOTAL_ROWS: %d | LAST_UPDATE: %s\n' "$CONFIG_ROW_COUNT" "$timestamp" >> "./logs/config.log"
         fi
     fi
+    
+    # Update rollback.log
     if [[ -f "./logs/rollback.log" ]]; then
+        local header="TIMESTAMP|SCRIPT|USER|PWD|CALL_ARGS|VERSION|ACTION|DESCRIPTION|REVERT_CMD"
+        local field_count=$(echo "$header" | awk -F'|' '{print NF}')
+        # Prepend the count header to the first line
+        sed -i "1s/^/[$ROLLBACK_ROW_COUNT|$header]\n/" "./logs/rollback.log"
+        # Append summary at the end
         if ! tail -n 1 "./logs/rollback.log" | grep -q "# TOTAL_ROWS:"; then
             printf '# TOTAL_ROWS: %d | LAST_UPDATE: %s\n' "$ROLLBACK_ROW_COUNT" "$timestamp" >> "./logs/rollback.log"
         fi
@@ -390,7 +403,7 @@ main() {
     # Old CSV functions no longer used - using new pipe-delimited format
     
     # Check prerequisites
-    check_jq
+    # check_jq (No longer mandatory since CSV migration)
     check_git
     
     # Handle rollback mode if requested
